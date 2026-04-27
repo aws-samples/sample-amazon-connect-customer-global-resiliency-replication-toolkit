@@ -1,93 +1,250 @@
 # Amazon Connect - ACGR Replication Starter Pack
 
+Serverless web application that discovers and replicates AWS resources associated with an Amazon Connect instance to its ACGR (Global Resiliency) paired disaster recovery region.
 
+> **NOTE:** This is a proof-of-concept tool intended for demonstration and internal evaluation. It is not production-hardened as shipped. See [SECURITY.md](SECURITY.md) for hardening notes and production follow-ups.
 
 ## Getting started
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+Clone the repo and follow the [Prerequisites](#prerequisites) and [Deployment](#deployment) sections below.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://gitlab.aws.dev/abilasc/amazon-connect-acgr-replication-starter-pack.git
-git branch -M main
-git push -uf origin main
+```bash
+git clone git@ssh.gitlab.aws.dev:abilasc/amazon-connect-acgr-replication-starter-pack.git
+cd amazon-connect-acgr-replication-starter-pack
 ```
 
-## Integrate with your tools
+## Architecture
 
-- [ ] [Set up project integrations](https://gitlab.aws.dev/abilasc/amazon-connect-acgr-replication-starter-pack/-/settings/integrations)
+```
+CloudFront
+├── S3 (React + Cloudscape frontend)
+└── API Gateway /api/* → Lambda (FastAPI + Mangum, 512 MB / 900s)
+    ├── DynamoDB: ReplicatorSessions (session state + TTL)
+    ├── DynamoDB: FlowAnalysisJobs (ephemeral analysis jobs + 1hr TTL)
+    ├── Step Functions: ReplicationStateMachine (async orchestration)
+    ├── Source Region AWS APIs (discovery)
+    └── Target Region AWS APIs (replication)
+```
 
-## Collaborate with your team
+## Features
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+- Guided 5-step wizard for resource discovery and replication
+- Instance picker: browse Connect instances by region or enter ARN manually
+- Supported resource types: IAM Roles, Lambda Functions, Lex Bots (V1 + V2 via ALGR), Kinesis Data Streams, Kinesis Firehose, Kinesis Video Streams, S3 Buckets
+- Dependency-ordered replication (IAM → Lambda → Lex → everything else)
+- Step Functions async replication for large inventories (>5 resources), with parallel execution per dependency level
+- Contact Flow Analysis: async scan of contact flows for Lex bot and Lambda function references, with inventory cross-referencing, progress tracking, and support for 1000+ flows
+- Error classification with actionable guidance (permission, quota, not-found, conflict, timeout)
+- KMS handling visibility: see what KMS key action was taken per resource (reused, bootstrapped, skipped)
+- Session persistence with live progress tracking
+- Retry failed resources individually or in bulk
+- Quota comparison between source and target regions
+- Selective cleanup of replicated resources
+- Resource diff between source and target
+- Idempotent: safe to re-run (handles "already exists" gracefully)
 
-## Test and Deploy
+## Supported ACGR Region Pairs
 
-Use the built-in continuous integration in GitLab.
+| Source | Target |
+|--------|--------|
+| us-east-1 | us-west-2 |
+| us-west-2 | us-east-1 |
+| eu-west-2 | eu-central-1 |
+| eu-central-1 | eu-west-2 |
+| ap-northeast-1 | ap-northeast-3 |
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+## Prerequisites
 
-***
+Install these on your development machine before deploying:
 
-# Editing this README
+| Tool | Minimum version | Install |
+|------|-----------------|---------|
+| AWS CLI | v2 | [docs.aws.amazon.com/cli](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) |
+| Node.js | 18+ | [nodejs.org](https://nodejs.org/) — Node 18 or Node 20 both work |
+| npm | bundled with Node.js | comes with Node install |
+| Python | 3.12+ | [python.org](https://www.python.org/downloads/) or Homebrew: `brew install python@3.12` |
+| AWS CDK CLI | v2 | `npm install -g aws-cdk` |
+| pip3 | bundled with Python | comes with Python install |
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+Additionally:
 
-## Suggestions for a good README
+- **AWS credentials** configured with permission to deploy CloudFormation, create IAM roles, and manage the AWS resources listed below. Run `aws sts get-caller-identity` to confirm your credentials resolve.
+- **CDK bootstrap** in the target account/region (only required the first time you deploy CDK apps in that account/region):
+  ```bash
+  cdk bootstrap aws://<ACCOUNT-ID>/<REGION>
+  ```
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+## Deployment
 
-## Name
-Choose a self-explaining name for your project.
+From the repository root:
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+```bash
+chmod +x deploy.sh
+./deploy.sh              # Full deploy (build frontend, bundle backend, CDK deploy, upload assets)
+./deploy.sh synth        # Synthesize CloudFormation only (no deploy)
+./deploy.sh destroy      # Tear down the stack and clean bundled deps
+```
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+`deploy.sh` handles the full pipeline:
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+1. **Preflight** — verifies AWS CLI, CDK, Node, and Python are installed and AWS credentials work
+2. **Frontend build** — `npm ci` and `npm run build` in `frontend/`
+3. **Backend bundling** — installs Python dependencies (FastAPI, Mangum, boto3, Pydantic with Linux x86_64 binaries) into `backend/` for the Lambda package
+4. **CDK synth & deploy** — provisions or updates the CloudFormation stack
+5. **Frontend upload** — syncs `dist/` to the frontend S3 bucket with correct cache-control headers (1-year immutable for hashed assets, no-cache for `index.html`)
+6. **CloudFront invalidation** — `/*` invalidation so users see the new build immediately
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+After a successful deploy, the CDK outputs include:
+- `CloudFrontUrl` — the URL to open in your browser
+- `ApiGatewayEndpoint` — the underlying API Gateway URL (mainly for debugging; the UI uses CloudFront)
+- `StateMachineArn` — the Step Functions state machine for async replication
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+You can also restrict CORS to a custom origin (default is the CloudFront distribution domain):
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+```bash
+cdk deploy --context allowedOrigin=https://your-custom-domain.example.com
+```
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+## AWS Resources Created
+
+| Resource | Logical name | Purpose |
+|----------|--------------|---------|
+| Lambda | `ReplicatorBackend` | FastAPI backend via Mangum (512 MB, 900s timeout, LOG_LEVEL=INFO) |
+| Lambda | `ResourceReplicatorLambda` | Single-resource replication handler invoked by Step Functions |
+| API Gateway | `ConnectAcgrReplicatorApi` | REST API (CORS scoped to CloudFront origin, 1000 rps / 2000 burst throttling) |
+| S3 Bucket | `FrontendBucket` | Static frontend assets (BlockPublicAccess + OAI) |
+| CloudFront | `ReplicatorDistribution` | CDN for the UI, with SPA URI rewrite and `/api/*` proxy to API Gateway |
+| DynamoDB | `ReplicatorSessions` | Session persistence with TTL (RemovalPolicy: RETAIN) |
+| DynamoDB | `FlowAnalysisJobs` | Ephemeral flow-analysis job state with 1-hour TTL (RemovalPolicy: RETAIN) |
+| Step Functions | `ReplicationStateMachine` | Dependency-level parallel replication orchestration |
+| IAM Role | `ReplicatorLambdaRole` | Broad cross-service role (Connect, Lambda, Lex, Kinesis, IAM, S3, KMS, Wisdom, etc.). Scope down for production. |
+
+## Project Structure
+
+```
+amazon-connect-acgr-replication-starter-pack/
+├── frontend/src/components/
+│   ├── Wizard/ReplicatorWizard.tsx    # 5-step replication wizard
+│   ├── InstancePicker.tsx             # Region → instance dropdown selector
+│   ├── Session/SessionsListPage.tsx   # Recent sessions list
+│   ├── Session/SessionStatusPage.tsx  # Live replication progress + SFN polling
+│   ├── ContactFlows/ContactFlowAnalysis.tsx
+│   ├── Quota/QuotaComparison.tsx
+│   ├── Discover/DiscoverAssociate.tsx
+│   └── Inventory/ResourceTable.tsx    # Paginated inventory (25/page)
+├── backend/
+│   ├── api/routes.py                  # FastAPI routes (25+ endpoints)
+│   ├── discovery/                     # Per-resource-type discovery modules
+│   ├── replication/                   # Per-resource-type replication modules
+│   ├── association/                   # Connect ↔ replicated resource association
+│   ├── cleanup/                       # Selective cleanup
+│   ├── audit/                         # Target-region audit
+│   ├── aws/                           # Cross-region boto3 clients + ARN utils
+│   ├── lambda_handler.py              # Mangum entry point for Lambda
+│   └── tests/                         # pytest suite (693 tests)
+├── infra/
+│   ├── app.py
+│   ├── stack.py                       # CDK stack definition
+│   └── tests/                         # CDK synth property tests
+├── scripts/
+│   └── check_docs.sh                  # Documentation invariant checker
+├── deploy.sh
+├── redeploy-frontend.sh
+├── run-tests.sh
+├── USER-GUIDE.md                      # Feature walkthrough and troubleshooting
+├── SECURITY.md                        # Vulnerability disclosure + scope
+├── CONTRIBUTING.md                    # How to file issues and PRs
+├── CHANGELOG.md
+└── LICENSE
+```
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|---------|-------------|
+| POST | `/api/validate-instance` | Validate a Connect instance ARN and resolve regions |
+| GET | `/api/list-instances?region=X` | List Connect instances in an ACGR-supported region |
+| POST | `/api/discover` | Run full resource discovery |
+| GET | `/api/inventory/{session_id}` | Retrieve discovered inventory |
+| POST | `/api/replicate` | Start sync replication for selected resources |
+| POST | `/api/sessions/{id}/replicate-async` | Start async replication via Step Functions |
+| GET | `/api/sessions/{id}/execution-status` | Poll Step Functions execution progress |
+| GET | `/api/replicate/{job_id}/status?session_id=X` | Poll sync replication progress |
+| POST | `/api/replicate/{job_id}/retry/{resource_id}` | Retry a failed resource |
+| POST | `/api/contact-flows/analyze` | Start async contact flow analysis (returns job_id) |
+| GET | `/api/contact-flows/analyze/{job_id}/status` | Poll flow analysis progress and results |
+| POST | `/api/inventory/{session_id}/resources` | Manually add a resource ARN to inventory |
+
+## Running Tests
+
+### Backend (Python)
+
+```bash
+cd backend
+python3 -m pytest tests/
+```
+
+Expected: **693 passing**.
+
+### Infrastructure (CDK property tests)
+
+```bash
+cd infra
+python3 -m pytest tests/
+```
+
+Expected: **4 passing** (no wildcard CORS, DynamoDB RETAIN, LOG_LEVEL=INFO on all Lambdas, UsagePlan present).
+
+### Frontend (Vitest + React Testing Library + fast-check)
+
+```bash
+cd frontend
+npm install
+npm run test
+```
+
+Expected: **30 passing** across 7 test files.
+
+### Documentation invariants
+
+```bash
+bash scripts/check_docs.sh
+```
+
+Expected: exit 0, ending with `[check_docs] PASS`.
+
+## Local Development
+
+### Backend
+
+```bash
+cd backend
+pip install fastapi uvicorn boto3 pydantic requests
+uvicorn api.routes:app --reload --port 8000
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The Vite dev server proxies `/api/*` to `http://localhost:8000`, so the frontend can talk to a locally running backend.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for:
+- Vulnerability disclosure policy
+- Supported versions
+- Scope — hardened defaults (CORS scoping, throttling, RETAIN, LOG_LEVEL, error sanitization)
+- Production-hardening follow-ups (authentication, IAM role scoping, cross-account support)
 
 ## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to file issues, submit pull requests, and run the test suites locally.
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Licensed under the MIT License. See [LICENSE](LICENSE) for the full text.

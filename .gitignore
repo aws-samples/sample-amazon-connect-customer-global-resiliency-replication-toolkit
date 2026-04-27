@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+*.egg
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# CDK
+cdk.out/
+cdk-outputs.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+.lambda_deps/
+.lambda_bundle/
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment
+.env
+.env.local
+
+# Vendored Python dependencies bundled into backend/ by deploy.sh for Lambda.
+# These are installed at deploy time from requirements.txt; they must never
+# be committed to the repo.
+backend/*.dist-info/
+backend/bin/
+backend/deps/
+backend/*.so
+
+# Individual vendored package directories. Listed explicitly so the backend
+# source directories (api, association, audit, aws, cleanup, diff, discovery,
+# models, quota, replication, store, tests) are NOT ignored.
+backend/annotated_doc/
+backend/annotated_types/
+backend/anyio/
+backend/boto3/
+backend/botocore/
+backend/certifi/
+backend/charset_normalizer/
+backend/click/
+backend/dateutil/
+backend/fastapi/
+backend/h11/
+backend/idna/
+backend/jmespath/
+backend/mangum/
+backend/pydantic/
+backend/pydantic_core/
+backend/requests/
+backend/s3transfer/
+backend/starlette/
+backend/typing_inspection/
+backend/urllib3/
+backend/uvicorn/
+
+# Top-level vendored files (installed by deploy.sh)
+backend/six.py
+backend/typing_extensions.py

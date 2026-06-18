@@ -13,6 +13,7 @@ from aws_cdk import (
     aws_dynamodb as dynamodb,
     aws_iam as iam,
     aws_lambda as _lambda,
+    aws_logs as logs,
     aws_s3 as s3,
     aws_stepfunctions as sfn,
     aws_stepfunctions_tasks as sfn_tasks,
@@ -21,16 +22,16 @@ from constructs import Construct
 
 
 class ConnectAcgrReplicatorStack(Stack):
-    """Serverless infrastructure stack for the Connect ACGR Resource Replicator.
+    """Serverless infrastructure stack for the Amazon Connect ACGR Resource Replicator.
 
     Provisions:
-    - Lambda function with FastAPI backend (512 MB, 900s timeout)
-    - API Gateway REST API with Lambda proxy integration and CORS
-    - S3 bucket for frontend static assets
-    - CloudFront distribution (S3 frontend + API Gateway backend /api/*)
-    - DynamoDB table for session persistence (with TTL)
-    - IAM roles for Lambda execution
-    - CDK outputs: CloudFront URL, API Gateway endpoint
+    - AWS Lambda function with FastAPI backend (512 MB, 900s timeout)
+    - Amazon API Gateway REST API with Lambda proxy integration and CORS
+    - Amazon S3 bucket for frontend static assets
+    - Amazon CloudFront distribution (Amazon S3 frontend + Amazon API Gateway backend /api/*)
+    - Amazon DynamoDB table for session persistence (with TTL)
+    - AWS IAM roles for AWS Lambda execution
+    - CDK outputs: Amazon CloudFront URL, Amazon API Gateway endpoint
     """
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
@@ -65,7 +66,7 @@ class ConnectAcgrReplicatorStack(Stack):
         )
 
         # ---------------------------------------------------------------
-        # 2. Lambda execution role with discovery/replication permissions
+        # 2. AWS Lambda execution role with discovery/replication permissions
         # ---------------------------------------------------------------
         lambda_role = iam.Role(
             self,
@@ -145,7 +146,7 @@ class ConnectAcgrReplicatorStack(Stack):
             )
         )
 
-        # Lex V2 — discovery + replication + cleanup
+        # Amazon Lex V2 — discovery + replication + cleanup
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -191,7 +192,7 @@ class ConnectAcgrReplicatorStack(Stack):
             )
         )
 
-        # Lex V1 — discovery (classic bots)
+        # Amazon Lex V1 — discovery (classic bots)
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -206,7 +207,7 @@ class ConnectAcgrReplicatorStack(Stack):
             )
         )
 
-        # Kinesis Data Streams — discovery + replication + cleanup
+        # Amazon Kinesis Data Streams — discovery + replication + cleanup
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -222,7 +223,7 @@ class ConnectAcgrReplicatorStack(Stack):
             )
         )
 
-        # Kinesis Firehose — discovery + replication + cleanup
+        # Amazon Data Firehose — discovery + replication + cleanup
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -235,7 +236,7 @@ class ConnectAcgrReplicatorStack(Stack):
             )
         )
 
-        # Kinesis Video Streams — discovery + replication + cleanup
+        # Amazon Kinesis Video Streams — discovery + replication + cleanup
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -283,7 +284,7 @@ class ConnectAcgrReplicatorStack(Stack):
             )
         )
 
-        # Connect — approved origins for association
+        # Amazon Connect — approved origins for association
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -295,7 +296,7 @@ class ConnectAcgrReplicatorStack(Stack):
             )
         )
 
-        # S3 — Lambda code download during replication + S3 bucket replication + cleanup
+        # S3 — AWS Lambda code download during replication + Amazon S3 bucket replication + cleanup
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -342,7 +343,7 @@ class ConnectAcgrReplicatorStack(Stack):
             )
         )
 
-        # Wisdom / Q in Connect — assistant and knowledge base replication
+        # Amazon Q in Connect — assistant and knowledge base replication
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -357,7 +358,7 @@ class ConnectAcgrReplicatorStack(Stack):
             )
         )
 
-        # Connect — integration associations (Wisdom linking)
+        # Amazon Connect — integration associations (Wisdom linking)
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -368,7 +369,7 @@ class ConnectAcgrReplicatorStack(Stack):
             )
         )
 
-        # Step Functions permissions for API Lambda role (Task 12.2)
+        # AWS Step Functions permissions for API Lambda role (Task 12.2)
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -385,11 +386,11 @@ class ConnectAcgrReplicatorStack(Stack):
         flow_analysis_table.grant_read_write_data(lambda_role)
 
         # ---------------------------------------------------------------
-        # 3. Lambda functions
+        # 3. AWS Lambda functions
         # ---------------------------------------------------------------
         backend_code_path = os.path.join(os.path.dirname(__file__), "..", "backend")
 
-        # 3a. Resource Lambda — single-resource replication for Step Functions
+        # 3a. Resource AWS Lambda — single-resource replication for Step Functions
         resource_lambda = _lambda.Function(
             self,
             "ResourceReplicatorLambda",
@@ -408,9 +409,9 @@ class ConnectAcgrReplicatorStack(Stack):
         )
 
         # ---------------------------------------------------------------
-        # 3b. Step Functions state machine — dependency-ordered replication
+        # 3b. AWS Step Functions state machine — dependency-ordered replication
         # ---------------------------------------------------------------
-        # Resource Lambda task — invoked for each resource
+        # Resource AWS Lambda task — invoked for each resource
         resource_task = sfn_tasks.LambdaInvoke(
             self,
             "ReplicateResource",
@@ -447,7 +448,7 @@ class ConnectAcgrReplicatorStack(Stack):
         # Grant Step Functions permission to invoke the Resource Lambda
         resource_lambda.grant_invoke(state_machine)
 
-        # 3c. API Lambda — FastAPI backend via Mangum
+        # 3c. API AWS Lambda — FastAPI backend via Mangum
         backend_function = _lambda.Function(
             self,
             "ReplicatorBackend",
@@ -468,6 +469,7 @@ class ConnectAcgrReplicatorStack(Stack):
 
         # ---------------------------------------------------------------
         # 4. S3 bucket — frontend static assets
+        # Hardened: SSE-S3 encryption at rest + TLS-only transport.
         # ---------------------------------------------------------------
         frontend_bucket = s3.Bucket(
             self,
@@ -475,10 +477,32 @@ class ConnectAcgrReplicatorStack(Stack):
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             removal_policy=RemovalPolicy.DESTROY,
             auto_delete_objects=True,
+            encryption=s3.BucketEncryption.S3_MANAGED,
+            enforce_ssl=True,
+        )
+
+        # S3 access log bucket for the frontend bucket and Amazon CloudFront distribution.
+        # ACLs enabled because CloudFront still uses ACL-based log delivery.
+        access_logs_bucket = s3.Bucket(
+            self,
+            "AccessLogsBucket",
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+            removal_policy=RemovalPolicy.DESTROY,
+            auto_delete_objects=True,
+            encryption=s3.BucketEncryption.S3_MANAGED,
+            enforce_ssl=True,
+            object_ownership=s3.ObjectOwnership.BUCKET_OWNER_PREFERRED,
+            lifecycle_rules=[
+                s3.LifecycleRule(
+                    id="ExpireAccessLogs",
+                    enabled=True,
+                    expiration=Duration.days(90),
+                ),
+            ],
         )
 
         # ---------------------------------------------------------------
-        # 5. CloudFront distribution (constructed before API Gateway so
+        # 5. Amazon CloudFront distribution (constructed before API Gateway so
         #    the API's CORS can be scoped to the distribution domain).
         #    The /api/* behavior is wired in after the API is created via
         #    distribution.add_behavior(...).
@@ -491,7 +515,7 @@ class ConnectAcgrReplicatorStack(Stack):
         )
         frontend_bucket.grant_read(oai)
 
-        # CloudFront Function for SPA URI rewriting — rewrites non-asset
+        # Amazon CloudFront Function for SPA URI rewriting — rewrites non-asset
         # URIs to /index.html so client-side routing works without relying
         # on custom error responses (which caused stale cache issues).
         spa_rewrite_function = cloudfront.Function(
@@ -517,7 +541,6 @@ class ConnectAcgrReplicatorStack(Stack):
         frontend_cache_policy = cloudfront.CachePolicy(
             self,
             "ReplicatorFrontendCachePolicy",
-            cache_policy_name="ReplicatorFrontendCachePolicy",
             comment="Respects origin Cache-Control; short default TTL for index.html",
             default_ttl=Duration.seconds(0),
             min_ttl=Duration.seconds(0),
@@ -543,11 +566,15 @@ class ConnectAcgrReplicatorStack(Stack):
                 ],
             ),
             default_root_object="index.html",
+            # Hardening: enable distribution access logging to S3.
+            log_bucket=access_logs_bucket,
+            log_file_prefix="cloudfront/",
+            log_includes_cookies=False,
         )
 
         # ---------------------------------------------------------------
-        # 6. API Gateway REST API — Lambda proxy integration with CORS
-        #    scoped to the CloudFront distribution (or an override via
+        # 6. Amazon API Gateway REST API — Lambda proxy integration with CORS
+        #    scoped to the Amazon CloudFront distribution (or an override via
         #    the `allowedOrigin` CDK context variable).
         # ---------------------------------------------------------------
         context_origin = self.node.try_get_context("allowedOrigin")
@@ -555,6 +582,14 @@ class ConnectAcgrReplicatorStack(Stack):
             allowed_origins = [context_origin]
         else:
             allowed_origins = [f"https://{distribution.distribution_domain_name}"]
+
+        # Amazon API Gateway access logs to a CloudWatch Logs group.
+        api_access_log_group = logs.LogGroup(
+            self,
+            "ReplicatorApiAccessLogs",
+            retention=logs.RetentionDays.ONE_MONTH,
+            removal_policy=RemovalPolicy.DESTROY,
+        )
 
         api = apigw.RestApi(
             self,
@@ -572,7 +607,24 @@ class ConnectAcgrReplicatorStack(Stack):
                     "X-Amz-Security-Token",
                 ],
             ),
-            deploy_options=apigw.StageOptions(stage_name="prod"),
+            deploy_options=apigw.StageOptions(
+                stage_name="prod",
+                # Hardening: enable access + execution logging on the prod stage.
+                access_log_destination=apigw.LogGroupLogDestination(api_access_log_group),
+                access_log_format=apigw.AccessLogFormat.json_with_standard_fields(
+                    caller=False,
+                    http_method=True,
+                    ip=True,
+                    protocol=True,
+                    request_time=True,
+                    resource_path=True,
+                    response_length=True,
+                    status=True,
+                    user=False,
+                ),
+                logging_level=apigw.MethodLoggingLevel.INFO,
+                metrics_enabled=True,
+            ),
         )
 
         # Proxy resource {proxy+} to catch all routes

@@ -49,7 +49,7 @@ def _delete_lex_bot(
     name: str,
     source_region: str = "",
 ) -> None:
-    """Delete a Lex bot from the target region.
+    """Delete a Amazon Lex bot from the target region.
 
     For ALGR replicas, tries DeleteBotReplica from the source region first
     (cleaner removal). Falls back to DeleteBot if that fails.

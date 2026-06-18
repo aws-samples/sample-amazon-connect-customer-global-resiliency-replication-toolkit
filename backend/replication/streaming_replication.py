@@ -1,9 +1,9 @@
 """Streaming resource replication to the ACGR target region.
 
 Replicates three types of streaming resources:
-- Kinesis Data Streams: CreateStream with same shard count, retention, encryption
-- Kinesis Firehose delivery streams: CreateDeliveryStream with same destination/buffering
-- Kinesis Video Streams: CreateStream with same retention and encryption
+- Amazon Kinesis Data Streams: CreateStream with same shard count, retention, encryption
+- Amazon Data Firehose delivery streams: CreateDeliveryStream with same destination/buffering
+- Amazon Kinesis Video Streams: CreateStream with same retention and encryption
 
 Requirements: 13.1, 13.2, 13.3, 13.4, 13.5
 """
@@ -148,7 +148,7 @@ def replicate_firehose_stream(
     resource_tags: dict[str, str] | None = None,
     role_arn_mapping: dict[str, str] | None = None,
 ) -> str:
-    """Replicate a Kinesis Firehose delivery stream to the ACGR target region.
+    """Replicate a Amazon Data Firehose delivery stream to the ACGR target region.
 
     Creates an equivalent delivery stream with the same:
     - Delivery stream name and destination type
@@ -160,7 +160,7 @@ def replicate_firehose_stream(
     original bucket name from the source configuration is used as-is.
 
     Args:
-        stream: The discovered Kinesis Firehose resource.
+        stream: The discovered Amazon Data Firehose resource.
         target_region: The ACGR target region.
         s3_bucket_name: Optional S3 bucket name in the target region for the
             delivery destination.  If ``None``, the original bucket name from
@@ -306,7 +306,7 @@ def _build_s3_destination_config(
 def replicate_kvs_stream(stream: KinesisVideoResource, target_region: str, resource_tags: dict[str, str] | None = None) -> str:
     """Handle KVS replication for the ACGR target region.
 
-    Amazon Connect does NOT create physical Kinesis Video Streams during
+    Amazon Connect does NOT create physical Amazon Kinesis Video Streams during
     ACGR replication. Instead, Connect creates KVS streams on-the-fly
     during calls using the MEDIA_STREAMS storage config prefix. Therefore,
     we never create physical KVS streams — we only need to enable the

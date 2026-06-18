@@ -4,8 +4,8 @@ Queries AWS Service Quotas API for both source and target regions,
 checks if the Connect instance has ACGR (Global Resiliency) enabled,
 and returns a comparison table with discrepancies highlighted.
 
-Covers quotas for: Amazon Connect, Lambda, Lex V2, DynamoDB, Kinesis,
-Kinesis Firehose, Kinesis Video Streams, S3, and IAM.
+Covers quotas for: Amazon Connect, Lambda, Amazon Lex V2, DynamoDB, Kinesis,
+Amazon Data Firehose, Amazon Kinesis Video Streams, S3, and IAM.
 """
 
 from __future__ import annotations

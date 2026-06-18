@@ -1,7 +1,7 @@
-"""Lex V2 bot replication to the ACGR target region.
+"""Amazon Lex V2 bot replication to the ACGR target region.
 
 Uses Amazon Lex Global Resiliency (ALGR) via CreateBotReplica as the
-sole mechanism for Lex bot replication. If ALGR fails, an error is
+sole mechanism for Amazon Lex bot replication. If ALGR fails, an error is
 raised directly — there is no legacy fallback.
 
 Requirements: 7.1, 7.2, 7.6, 7.7
@@ -26,9 +26,9 @@ _BUILD_MAX_WAIT_SECONDS = 300
 
 
 def _normalize_locale_id(locale_id: str) -> str:
-    """Normalize locale ID to Lex V2 format (e.g., en-US -> en_US).
+    """Normalize locale ID to Amazon Lex V2 format (e.g., en-US -> en_US).
 
-    Lex V1 uses hyphen format (en-US), Lex V2 requires underscore (en_US).
+    Amazon Lex V1 uses hyphen format (en-US), Amazon Lex V2 requires underscore (en_US).
     """
     return locale_id.replace("-", "_")
 
@@ -87,7 +87,7 @@ def _wait_for_bot_available(lex_client, bot_id: str, max_wait: int = 60) -> None
     """Wait for a bot to reach 'Available' status after creation.
 
     Args:
-        lex_client: boto3 Lex V2 client.
+        lex_client: boto3 Amazon Lex V2 client.
         bot_id: The bot ID to wait for.
         max_wait: Maximum seconds to wait.
 
@@ -124,20 +124,20 @@ def replicate_lex_bot(
     resource_tags: dict[str, str] | None = None,
     instance_id: str = "",
 ) -> str:
-    """Replicate a Lex V2 bot to the ACGR target region using ALGR.
+    """Replicate a Amazon Lex V2 bot to the ACGR target region using ALGR.
 
     Uses Amazon Lex Global Resiliency (ALGR) via CreateBotReplica as the
     sole replication mechanism. If ALGR fails, raises an error directly.
 
     Args:
-        bot_resource: The discovered Lex bot resource to replicate.
+        bot_resource: The discovered Amazon Lex bot resource to replicate.
         target_region: The ACGR target region.
         lambda_arn_mapping: Optional mapping of source Lambda ARN → target Lambda ARN.
         role_arn_mapping: Optional mapping of source role ARN → target role ARN.
         instance_id: Connect instance ID for post-replication association.
 
     Returns:
-        The ARN of the Lex bot in the target region.
+        The ARN of the Amazon Lex bot in the target region.
 
     Raises:
         LexAlgrSkippedError: If ALGR is not supported for the region pair.
@@ -518,7 +518,7 @@ def _update_algr_bot_lambda_arns(
 def _associate_lex_bot_with_connect(
     bot_arn: str, bot_id: str, instance_id: str, target_region: str
 ) -> None:
-    """Associate a Lex V2 bot with a Connect instance (best-effort).
+    """Associate a Amazon Lex V2 bot with a Connect instance (best-effort).
 
     Calls connect:AssociateBot. Failures are logged but don't fail replication.
     """

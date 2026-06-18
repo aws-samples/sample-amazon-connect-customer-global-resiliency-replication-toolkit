@@ -1,8 +1,8 @@
-"""Streaming configuration discovery for Connect ACGR Resource Replicator.
+"""Streaming configuration discovery for Amazon Connect ACGR Resource Replicator.
 
 Discovers CTR (Contact Trace Records) and Agent Event Stream configurations
 associated with a Connect instance. For each storage config, retrieves full
-Kinesis Data Stream or Kinesis Firehose delivery stream details.
+Kinesis Data Stream or Amazon Data Firehose delivery stream details.
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ def _extract_kinesis_stream_arn(config: dict[str, Any]) -> str | None:
 
 
 def _extract_firehose_arn(config: dict[str, Any]) -> str | None:
-    """Extract a Kinesis Firehose delivery stream ARN from a storage config.
+    """Extract a Amazon Data Firehose delivery stream ARN from a storage config.
 
     The ARN lives under KinesisFirehoseConfig.FirehoseArn.
 
@@ -292,7 +292,7 @@ def discover_streaming_resources(
                         _build_kinesis_stream_resource(kinesis_arn, description)
                     )
 
-            # Check for Kinesis Firehose
+            # Check for Amazon Data Firehose
             firehose_arn = _extract_firehose_arn(config)
             if firehose_arn and firehose_arn not in seen_arns:
                 seen_arns.add(firehose_arn)

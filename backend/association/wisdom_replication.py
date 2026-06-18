@@ -113,7 +113,7 @@ def _resolve_or_create_kms_key(
 
 
 # ---------------------------------------------------------------------------
-# Wisdom assistant and knowledge base discovery
+# Amazon Q in Connect assistant and knowledge base discovery
 # ---------------------------------------------------------------------------
 
 def _list_connect_wisdom_assistants(
@@ -183,7 +183,7 @@ def _create_target_assistant(
     source_assistant: dict[str, Any],
     target_region: str,
 ) -> tuple[str, str, str]:
-    """Create a Wisdom assistant in the target region matching the source.
+    """Create a Amazon Q in Connect assistant in the target region matching the source.
 
     Returns:
         (target_assistant_id, target_assistant_arn, message)

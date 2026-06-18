@@ -25,7 +25,7 @@ def discover_target_resources(
 ) -> list[dict[str, Any]]:
     """Discover resources in the target region that can be associated.
 
-    Scans for Lex bots, Lambda functions, Kinesis streams, Firehose streams,
+    Scans for Amazon Lex bots, AWS Lambda functions, Kinesis streams, Firehose streams,
     S3 buckets, and KVS configs. Cross-references against source instance
     resources to identify matches.
 
@@ -45,13 +45,13 @@ def discover_target_resources(
     target_bots = _get_target_associated_bots(target_region, instance_id)
     target_storage = _get_target_storage_configs(target_region, instance_id)
 
-    # Discover Lex bots
+    # Discover Amazon Lex bots
     lex_results = _discover_lex_bots(
         target_region, source_bots, target_bots, instance_id
     )
     results.extend(lex_results)
 
-    # Discover Lambda functions
+    # Discover AWS Lambda functions
     lambda_results = _discover_lambdas(
         target_region, source_lambdas, target_lambdas
     )
@@ -225,7 +225,7 @@ def _get_target_storage_configs(
 
 
 # ---------------------------------------------------------------------------
-# Lex bot discovery
+# Amazon Lex bot discovery
 # ---------------------------------------------------------------------------
 
 def _discover_lex_bots(

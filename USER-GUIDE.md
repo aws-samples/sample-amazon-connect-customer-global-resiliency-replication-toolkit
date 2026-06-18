@@ -1,4 +1,4 @@
-# Connect ACGR Resource Replicator — User Guide
+# Amazon Connect ACGR Resource Replicator — User Guide
 
 This guide covers detailed feature walkthroughs and troubleshooting. For setup, deployment, architecture, and API reference, see [README.md](README.md).
 
@@ -25,14 +25,14 @@ Review the detected source and target regions. The tool shows whether the instan
 Click "Discover" to scan all associated resources. Discovery typically takes 10–30 seconds and finds:
 - Lambda functions (via `connect:ListLambdaFunctions`)
 - Lex bots V1 and V2 (via `connect:ListBots`)
-- IAM roles (from Lambda execution roles)
+- IAM roles (from AWS Lambda execution roles)
 - Kinesis/Firehose/KVS streams (from Connect instance storage config)
 
 ### Step 4: Select Resources
 
 Review the discovered inventory organized by category. For each resource you can see the name, ARN, type, status, and dependencies. Select which resources to replicate. Optionally enter a name prefix (e.g., `dr-`) to prepend to all replicated resource names.
 
-**Sync vs Async Mode:** For ≤ 5 resources, replication runs synchronously in a single Lambda execution. For > 5 resources, the tool automatically uses Step Functions for async replication with parallel execution per dependency level. You can opt into async mode for smaller jobs if you prefer.
+**Sync vs Async Mode:** For ≤ 5 resources, replication runs synchronously in a single AWS Lambda execution. For > 5 resources, the tool automatically uses Step Functions for async replication with parallel execution per dependency level. You can opt into async mode for smaller jobs if you prefer.
 
 ### Step 5: Replicate
 
@@ -51,7 +51,7 @@ Each resource shows live status: pending → in progress → completed / failed 
 
 ### Lex Replication via ALGR
 
-Lex bots are replicated using ALGR (Amazon Lex Global Resiliency) for real-time sync between source and target regions. Fulfillment Lambda ARNs are rewritten to the target region, and bot alias and locale configuration are preserved.
+Amazon Lex bots are replicated using ALGR (Amazon Lex Global Resiliency) for real-time sync between source and target regions. Fulfillment Lambda ARNs are rewritten to the target region, and bot alias and locale configuration are preserved.
 
 ### Lambda Runtime Upgrades
 
@@ -67,7 +67,7 @@ Deprecated runtimes are automatically upgraded during replication:
 
 ### ARN Rewriting
 
-Lambda environment variables containing source-region ARNs are automatically rewritten to target-region equivalents. This covers DynamoDB table ARNs, Kinesis stream ARNs, and other regional resources.
+Lambda environment variables containing source-region ARNs are automatically rewritten to target-region equivalents. This covers Amazon DynamoDB table ARNs, Kinesis stream ARNs, and other regional resources.
 
 ### Idempotency
 
@@ -90,7 +90,7 @@ Sessions have a TTL and are automatically cleaned up after expiration.
 
 Compare service quotas between source and target regions to identify potential issues before replication:
 - Lambda concurrent executions
-- Lex bot limits
+- Amazon Lex bot limits
 - Kinesis shard limits
 
 Highlights quotas where the target region has lower limits than the source.
@@ -106,7 +106,7 @@ For cases where resources already exist in the target region (e.g., manually cre
 3. Review discovered resources
 4. Click "Associate" to link them with the target Connect instance
 
-Useful for associating Lambda functions, linking Lex bots, or configuring storage (Kinesis, S3) on the DR instance.
+Useful for associating AWS Lambda functions, linking Amazon Lex bots, or configuring storage (Kinesis, S3) on the DR instance.
 
 ---
 
@@ -130,7 +130,7 @@ Compare a resource between source and target regions to see configuration differ
 
 ## Contact Flow Analysis
 
-The Contact Flows page lets you scan your Connect instance's contact flows to identify which Lex bots and Lambda functions they reference. This is useful for planning replication — you can see exactly which resources are used by your flows before starting.
+The Contact Flows page lets you scan your Connect instance's contact flows to identify which Amazon Lex bots and AWS Lambda functions they reference. This is useful for planning replication — you can see exactly which resources are used by your flows before starting.
 
 ### How to Use
 
@@ -147,7 +147,7 @@ When you click Analyze, the tool:
 2. Kicks off a background Lambda invocation (900s timeout) that:
    - Lists all contact flows via `ListContactFlows`
    - Calls `DescribeContactFlow` concurrently (5 at a time) for each flow
-   - Parses JSON definitions to extract Lex bot and Lambda ARNs
+   - Parses JSON definitions to extract Amazon Lex bot and Lambda ARNs
    - Updates progress in DynamoDB every 25 flows
 3. The frontend polls every 3 seconds for progress updates
 4. Results are stored in DynamoDB with a 1-hour TTL (auto-cleanup)
@@ -158,8 +158,8 @@ If the Lambda approaches its timeout (850s), analysis stops gracefully and retur
 
 Each row shows:
 - **Flow Name** and **Flow Type** (e.g., CONTACT_FLOW, CUSTOMER_QUEUE)
-- **Lex Bot References** — count of Lex bots referenced via `InvokeLexBot` / `InvokeLexV2Bot` actions
-- **Lambda References** — count of Lambda functions referenced via `InvokeLambdaFunction` actions
+- **Lex Bot References** — count of Amazon Lex bots referenced via `InvokeLexBot` / `InvokeLexV2Bot` actions
+- **Lambda References** — count of AWS Lambda functions referenced via `InvokeLambdaFunction` actions
 
 Expand a row to see the specific ARNs. Each ARN shows an inventory match indicator — green if the resource is already in your replication inventory, gray if not.
 
@@ -167,8 +167,8 @@ Expand a row to see the specific ARNs. Each ARN shows an inventory match indicat
 
 Use the filter controls to narrow results:
 - **All** — show all contact flows
-- **Lex Only** — show only flows that reference Lex bots
-- **Lambda Only** — show only flows that reference Lambda functions
+- **Lex Only** — show only flows that reference Amazon Lex bots
+- **Lambda Only** — show only flows that reference AWS Lambda functions
 
 A summary banner at the top shows total flows analyzed, flows with Lex references, and flows with Lambda references.
 
@@ -238,7 +238,7 @@ For large replication jobs (> 5 resources), the tool uses AWS Step Functions for
 
 ### Progress Polling
 
-The Session Status page automatically polls for progress while a Step Functions execution is running. You'll see:
+The Session Status page automatically polls for progress while a AWS Step Functions execution is running. You'll see:
 - Current dependency level being executed
 - Per-resource status: pending → in progress → completed / failed / blocked
 - A final summary with succeeded, failed, and blocked counts
@@ -247,7 +247,7 @@ The Session Status page automatically polls for progress while a Step Functions 
 
 ## Throttle Handling
 
-The resource Lambda handler (`resource_lambda_handler.py`) uses exponential backoff with jitter when AWS API calls are throttled. This prevents cascading failures during parallel Step Functions execution when multiple resources are being replicated simultaneously.
+The resource Lambda handler (`resource_lambda_handler.py`) uses exponential backoff with jitter when AWS API calls are throttled. This prevents cascading failures during parallel AWS Step Functions execution when multiple resources are being replicated simultaneously.
 
 ---
 
@@ -265,8 +265,8 @@ The resource Lambda handler (`resource_lambda_handler.py`) uses exponential back
 | Issue | Resolution |
 |-------|------------|
 | "Instance not found" | Verify the ARN is correct and the Lambda role has `connect:DescribeInstance` in that region |
-| Discovery finds no resources | Ensure the Connect instance has Lambda functions, Lex bots, or storage configs associated |
+| Discovery finds no resources | Ensure the Connect instance has AWS Lambda functions, Amazon Lex bots, or storage configs associated |
 | Lambda replication fails with "Role not found" | IAM roles must be replicated first — check if the IAM role replication succeeded |
-| Lex bot replication fails | Check that ALGR is supported for the region pair; verify the bot exists in the source region |
+| Amazon Lex bot replication fails | Check that ALGR is supported for the region pair; verify the bot exists in the source region |
 | Replication timeout (900s) | Use async mode (Step Functions) for large inventories — the wizard auto-selects async for >5 resources |
 | Permission denied error | Check the error badge on the Session Status page — it shows the specific IAM action that was denied |

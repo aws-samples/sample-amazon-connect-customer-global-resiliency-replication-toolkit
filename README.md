@@ -30,10 +30,10 @@ CloudFront
 
 - Guided 5-step wizard for resource discovery and replication
 - Instance picker: browse Connect instances by region or enter ARN manually
-- Supported resource types: IAM Roles, Lambda Functions, Lex Bots (V1 + V2 via ALGR), Kinesis Data Streams, Kinesis Firehose, Kinesis Video Streams, S3 Buckets
+- Supported resource types: IAM Roles, Lambda Functions, Lex Bots (V1 + V2 via ALGR), Amazon Kinesis Data Streams, Amazon Data Firehose, Amazon Kinesis Video Streams, S3 Buckets
 - Dependency-ordered replication (IAM → Lambda → Lex → everything else)
 - Step Functions async replication for large inventories (>5 resources), with parallel execution per dependency level
-- Contact Flow Analysis: async scan of contact flows for Lex bot and Lambda function references, with inventory cross-referencing, progress tracking, and support for 1000+ flows
+- Contact Flow Analysis: async scan of contact flows for Amazon Lex bot and Lambda function references, with inventory cross-referencing, progress tracking, and support for 1000+ flows
 - Error classification with actionable guidance (permission, quota, not-found, conflict, timeout)
 - KMS handling visibility: see what KMS key action was taken per resource (reused, bootstrapped, skipped)
 - Session persistence with live progress tracking
@@ -97,9 +97,9 @@ chmod +x deploy.sh
 After a successful deploy, the CDK outputs include:
 - `CloudFrontUrl` — the URL to open in your browser
 - `ApiGatewayEndpoint` — the underlying API Gateway URL (mainly for debugging; the UI uses CloudFront)
-- `StateMachineArn` — the Step Functions state machine for async replication
+- `StateMachineArn` — the AWS Step Functions state machine for async replication
 
-You can also restrict CORS to a custom origin (default is the CloudFront distribution domain):
+You can also restrict CORS to a custom origin (default is the Amazon CloudFront distribution domain):
 
 ```bash
 cdk deploy --context allowedOrigin=https://your-custom-domain.example.com
@@ -168,7 +168,7 @@ amazon-connect-acgr-replication-starter-pack/
 | GET | `/api/inventory/{session_id}` | Retrieve discovered inventory |
 | POST | `/api/replicate` | Start sync replication for selected resources |
 | POST | `/api/sessions/{id}/replicate-async` | Start async replication via Step Functions |
-| GET | `/api/sessions/{id}/execution-status` | Poll Step Functions execution progress |
+| GET | `/api/sessions/{id}/execution-status` | Poll AWS Step Functions execution progress |
 | GET | `/api/replicate/{job_id}/status?session_id=X` | Poll sync replication progress |
 | POST | `/api/replicate/{job_id}/retry/{resource_id}` | Retry a failed resource |
 | POST | `/api/contact-flows/analyze` | Start async contact flow analysis (returns job_id) |

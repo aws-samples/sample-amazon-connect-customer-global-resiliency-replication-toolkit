@@ -32,7 +32,7 @@ export interface Resource {
   error?: string | null;
 }
 
-/** VPC selection for Lambda functions that need VPC configuration in the target region. */
+/** VPC selection for AWS Lambda functions that need VPC configuration in the target region. */
 export interface VpcSelection {
   vpcId: string;
   subnetIds: string[];

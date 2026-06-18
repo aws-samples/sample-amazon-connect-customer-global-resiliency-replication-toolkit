@@ -6,8 +6,8 @@ After replication creates resources in the target region, this module:
 3. Enables required instance attributes (data streaming, etc.)
 4. Associates each replicated resource with the DR Connect instance
 
-Covers: Lambda, Lex V2 bots, S3 (storage configs), Kinesis Data Streams,
-Kinesis Firehose, and Kinesis Video Streams (media streaming).
+Covers: Lambda, Amazon Lex V2 bots, S3 (storage configs), Amazon Kinesis Data Streams,
+Amazon Data Firehose, and Amazon Kinesis Video Streams (media streaming).
 """
 
 from __future__ import annotations
@@ -172,7 +172,7 @@ def associate_resources(
         if resource.status != ReplicationStatus.REPLICATED:
             continue
         if not resource.replicated_arn:
-            # For Lex bots that are REPLICATED (e.g. ALGR replica exists) but
+            # For Amazon Lex bots that are REPLICATED (e.g. ALGR replica exists) but
             # were not in the selected replication job, try to resolve the ARN
             # on-the-fly so association can proceed.
             if resource.resource_type == ResourceType.LEX_BOT:
@@ -197,7 +197,7 @@ def associate_resources(
 
         if rtype == ResourceType.LAMBDA:
             # Skip Lex codehook/fulfillment lambdas — they are invoked by
-            # the Lex bot, not directly by Connect contact flows.
+            # the Amazon Lex bot, not directly by Connect contact flows.
             if getattr(resource, 'is_lex_codehook', False):
                 results.append({
                     "resource": resource.name,
@@ -297,7 +297,7 @@ def associate_single_resource(
     if resource.status != ReplicationStatus.REPLICATED:
         return {"resource": resource.name, "status": "error", "error": f"Resource is not replicated (status: {resource.status})"}
     if not resource.replicated_arn:
-        # For Lex bots, try to resolve the ARN on-the-fly
+        # For Amazon Lex bots, try to resolve the ARN on-the-fly
         if resource.resource_type == ResourceType.LEX_BOT:
             resolved = _resolve_lex_bot_arn(resource, session.target_region, session.source_region)
             if resolved:
@@ -665,7 +665,7 @@ def _ensure_lambda_connect_permission(func_arn: str, instance_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Lex bot association
+# Amazon Lex bot association
 # ---------------------------------------------------------------------------
 
 def _ensure_lex_connect_permission(alias_arn: str, instance_id: str, target_region: str) -> None:
@@ -837,7 +837,7 @@ def _associate_lex_bot(
 
 
 # ---------------------------------------------------------------------------
-# Lex bot alias resolution helpers
+# Amazon Lex bot alias resolution helpers
 # ---------------------------------------------------------------------------
 
 def _find_latest_bot_version(lex_client, bot_id: str) -> str | None:
@@ -980,7 +980,7 @@ def _get_bot_alias_arn(
     source_region: str | None = None,
     source_bot_arn: str | None = None,
 ) -> str | None:
-    """Get the best alias ARN for a Lex V2 bot.
+    """Get the best alias ARN for a Amazon Lex V2 bot.
 
     Prefers non-DRAFT aliases. For ALGR replicas that only have TSTALIASID,
     creates a proper alias on the source bot.
@@ -1063,9 +1063,9 @@ def _get_bot_alias_arn(
 # ---------------------------------------------------------------------------
 
 def _resolve_lex_bot_arn(resource: Any, target_region: str, source_region: str) -> str | None:
-    """Resolve a Lex bot ARN in the target region when replicated_arn is missing.
+    """Resolve a Amazon Lex bot ARN in the target region when replicated_arn is missing.
 
-    This handles the case where a Lex bot was marked REPLICATED during discovery
+    This handles the case where a Amazon Lex bot was marked REPLICATED during discovery
     (e.g. ALGR replica already exists) but was not selected for the replication
     job, so the orchestrator never set its replicated_arn.
     """
@@ -1219,7 +1219,7 @@ def _associate_firehose(
     firehose_type_map: dict[str, list[str]] | None = None,
     source_region: str | None = None,
 ) -> dict[str, Any]:
-    """Associate a replicated Kinesis Firehose with the DR Connect instance.
+    """Associate a replicated Amazon Data Firehose with the DR Connect instance.
 
     Uses the source storage config mapping to determine the correct storage type.
     Waits for the Firehose to become ACTIVE before attempting association.

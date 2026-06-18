@@ -1,6 +1,6 @@
-"""Lex bot discovery for Connect ACGR Resource Replicator.
+"""Amazon Lex bot discovery for Amazon Connect ACGR Resource Replicator.
 
-Discovers all Lex V1 and V2 bots associated with a Connect instance, their aliases,
+Discovers all Amazon Lex V1 and V2 bots associated with a Connect instance, their aliases,
 locales, intents, and slot types. Extracts fulfillment Lambda ARNs from intent
 configurations for cross-discovery.
 """
@@ -25,7 +25,7 @@ def _generate_resource_id(arn: str) -> str:
 
 
 def _get_associated_bots(connect_client: Any, instance_id: str) -> list[dict[str, Any]]:
-    """Call Connect ListBots to get all Lex V2 bot associations for the instance.
+    """Call Connect ListBots to get all Amazon Lex V2 bot associations for the instance.
 
     Handles pagination via NextToken.
 
@@ -48,7 +48,7 @@ def _get_associated_bots(connect_client: Any, instance_id: str) -> list[dict[str
 
 
 def _describe_bot(lex_client: Any, bot_id: str) -> dict[str, Any] | None:
-    """Call Lex V2 DescribeBot to retrieve full bot configuration.
+    """Call Amazon Lex V2 DescribeBot to retrieve full bot configuration.
 
     Returns None if the bot cannot be retrieved.
     """
@@ -60,7 +60,7 @@ def _describe_bot(lex_client: Any, bot_id: str) -> dict[str, Any] | None:
 
 
 def _list_bot_aliases(lex_client: Any, bot_id: str) -> list[dict[str, Any]]:
-    """Call Lex V2 ListBotAliases to retrieve all aliases for a bot.
+    """Call Amazon Lex V2 ListBotAliases to retrieve all aliases for a bot.
 
     Handles pagination via nextToken. After listing, calls DescribeBotAlias
     for each alias to get full configuration including botAliasLocaleSettings
@@ -106,7 +106,7 @@ def _list_bot_aliases(lex_client: Any, bot_id: str) -> list[dict[str, Any]]:
 
 
 def _list_bot_locales(lex_client: Any, bot_id: str, bot_version: str = "DRAFT") -> list[dict[str, Any]]:
-    """Call Lex V2 ListBotLocales to retrieve all locales for a bot.
+    """Call Amazon Lex V2 ListBotLocales to retrieve all locales for a bot.
 
     Handles pagination via nextToken.
     """
@@ -130,7 +130,7 @@ def _list_bot_locales(lex_client: Any, bot_id: str, bot_version: str = "DRAFT") 
 def _list_intents(
     lex_client: Any, bot_id: str, bot_version: str, locale_id: str
 ) -> list[dict[str, Any]]:
-    """Call Lex V2 ListIntents to retrieve all intents for a bot locale.
+    """Call Amazon Lex V2 ListIntents to retrieve all intents for a bot locale.
 
     Handles pagination via nextToken. After listing, calls DescribeIntent
     for each intent to get full configuration including Lambda ARNs.
@@ -187,7 +187,7 @@ def _list_intents(
 def _list_slot_types(
     lex_client: Any, bot_id: str, bot_version: str, locale_id: str
 ) -> list[dict[str, Any]]:
-    """Call Lex V2 ListSlotTypes to retrieve all slot types for a bot locale.
+    """Call Amazon Lex V2 ListSlotTypes to retrieve all slot types for a bot locale.
 
     Handles pagination via nextToken.
     """
@@ -286,11 +286,11 @@ def _extract_from_dict(data: Any, lambda_arns: list[str], seen: set[str]) -> Non
 
 
 # ---------------------------------------------------------------------------
-# Lex V1 discovery helpers
+# Amazon Lex V1 discovery helpers
 # ---------------------------------------------------------------------------
 
 def _get_associated_v1_bots(connect_client: Any, instance_id: str) -> list[dict[str, Any]]:
-    """Call Connect ListBots with LexVersion=V1 to get all Lex V1 bot associations.
+    """Call Connect ListBots with LexVersion=V1 to get all Amazon Lex V1 bot associations.
 
     Handles pagination via NextToken.
 
@@ -313,7 +313,7 @@ def _get_associated_v1_bots(connect_client: Any, instance_id: str) -> list[dict[
 
 
 def _get_v1_bot(lex_v1_client: Any, bot_name: str) -> dict[str, Any] | None:
-    """Call Lex V1 GetBot to retrieve full bot configuration.
+    """Call Amazon Lex V1 GetBot to retrieve full bot configuration.
 
     Returns None if the bot cannot be retrieved.
     """
@@ -325,7 +325,7 @@ def _get_v1_bot(lex_v1_client: Any, bot_name: str) -> dict[str, Any] | None:
 
 
 def _get_v1_bot_aliases(lex_v1_client: Any, bot_name: str) -> list[dict[str, Any]]:
-    """Call Lex V1 GetBotAliases to retrieve all aliases for a bot.
+    """Call Amazon Lex V1 GetBotAliases to retrieve all aliases for a bot.
 
     Handles pagination via nextToken.
     """
@@ -347,7 +347,7 @@ def _get_v1_bot_aliases(lex_v1_client: Any, bot_name: str) -> list[dict[str, Any
 
 
 def _get_v1_intents(lex_v1_client: Any, bot_response: dict[str, Any]) -> list[dict[str, Any]]:
-    """Extract intent details from a Lex V1 GetBot response.
+    """Extract intent details from a Amazon Lex V1 GetBot response.
 
     The V1 GetBot response includes intent references (name + version).
     We call GetIntent for each to get full details including fulfillment Lambda ARNs.
@@ -370,7 +370,7 @@ def _get_v1_intents(lex_v1_client: Any, bot_response: dict[str, Any]) -> list[di
 
 
 def _get_v1_slot_types(lex_v1_client: Any, bot_response: dict[str, Any]) -> list[dict[str, Any]]:
-    """Discover custom slot types used by a specific Lex V1 bot.
+    """Discover custom slot types used by a specific Amazon Lex V1 bot.
 
     Extracts slot type names from the bot's intents, then fetches details
     (enumeration values) for each custom (non-AMAZON.*) type.
@@ -461,7 +461,7 @@ def _classify_v1_lambda_roles(intents: list[dict[str, Any]]) -> dict[str, set[st
 
 
 def _extract_v1_fulfillment_lambda_arns(intents: list[dict[str, Any]]) -> list[str]:
-    """Extract Lambda function ARNs from Lex V1 intent fulfillment configurations.
+    """Extract Lambda function ARNs from Amazon Lex V1 intent fulfillment configurations.
 
     V1 intents have a fulfillmentActivity.codeHook.uri field that contains
     the Lambda function ARN, and a dialogCodeHook.uri field.
@@ -559,7 +559,7 @@ def _build_lex_bot_resource(
 
     resource_id = _generate_resource_id(bot_arn)
 
-    # Dependencies: Lex bots depend on their fulfillment Lambda functions
+    # Dependencies: Amazon Lex bots depend on their fulfillment AWS Lambda functions
     dependencies = [_generate_resource_id(arn) for arn in fulfillment_lambda_arns]
 
     return LexBotResource(
@@ -579,12 +579,12 @@ def _build_lex_bot_resource(
 def discover_lex_bots(
     instance_id: str, source_region: str
 ) -> tuple[list[LexBotResource], list[str]]:
-    """Discover all Lex V1 and V2 bots associated with a Connect instance.
+    """Discover all Amazon Lex V1 and V2 bots associated with a Connect instance.
 
     This function:
-    1. Calls Connect ListBots (V1) to get Lex V1 bot associations
+    1. Calls Connect ListBots (V1) to get Amazon Lex V1 bot associations
     2. For each V1 bot, calls GetBot, GetBotAliases, GetIntent
-    3. Calls Connect ListBots (V2) to get Lex V2 bot associations
+    3. Calls Connect ListBots (V2) to get Amazon Lex V2 bot associations
     4. For each V2 bot, calls DescribeBot, ListBotAliases, ListBotLocales
     5. For each V2 locale, calls ListIntents and ListSlotTypes
     6. Extracts fulfillment Lambda ARNs from intent configurations
@@ -607,7 +607,7 @@ def discover_lex_bots(
     seen_lambda_arns: set[str] = set()
 
     # ---------------------------------------------------------------
-    # Lex V1 discovery
+    # Amazon Lex V1 discovery
     # ---------------------------------------------------------------
     v1_associations = _get_associated_v1_bots(connect_client, instance_id)
     logger.info(
@@ -678,7 +678,7 @@ def discover_lex_bots(
             lex_resources.append(lex_resource)
 
     # ---------------------------------------------------------------
-    # Lex V2 discovery
+    # Amazon Lex V2 discovery
     # ---------------------------------------------------------------
     v2_associations = _get_associated_bots(connect_client, instance_id)
     logger.info(
@@ -770,7 +770,7 @@ def discover_lex_bots(
                 seen_lambda_arns.add(arn)
                 all_fulfillment_lambda_arns.append(arn)
 
-        # Build the Lex bot resource
+        # Build the Amazon Lex bot resource
         lex_resource = _build_lex_bot_resource(
             bot_id=bot_id,
             bot_response=bot_response,

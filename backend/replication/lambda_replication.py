@@ -176,7 +176,7 @@ def _replicate_single_layer(
     layer_name: str,
     target_region: str,
 ) -> str | None:
-    """Replicate a single Lambda layer version to the target region.
+    """Replicate a single AWS Lambda layer version to the target region.
 
     Returns the target layer version ARN, or None on failure.
     """
@@ -243,7 +243,7 @@ def _replicate_single_layer(
 
 
 def _download_code_package(lambda_resource: LambdaResource, source_region: str) -> bytes:
-    """Download the Lambda function code package from the source region.
+    """Download the AWS Lambda function code package from the source region.
 
     Uses Lambda GetFunction to obtain a pre-signed URL for the code, then
     downloads the zip package.
@@ -601,7 +601,7 @@ def replicate_lambda_function(
     # Step 2: Create function in target region
     lambda_client = create_target_client("lambda", target_region)
     # Lex codehook/fulfillment Lambdas keep the original name (same as
-    # Connect-associated Lambdas) so the Lex bot can reference them by
+    # Connect-associated Lambdas) so the Amazon Lex bot can reference them by
     # the same function name in the target region.
     target_name = lambda_resource.name
     logger.info(
@@ -635,7 +635,7 @@ def replicate_lambda_function(
 
     # Step 4: Associate with replica Connect instance (best-effort)
     # Lex codehook Lambdas are NOT associated with Connect — they are
-    # invoked by the Lex bot, not by Connect contact flows directly.
+    # invoked by the Amazon Lex bot, not by Connect contact flows directly.
     if instance_id and not lambda_resource.is_lex_codehook:
         _associate_lambda_with_connect(function_arn, instance_id, target_region)
 

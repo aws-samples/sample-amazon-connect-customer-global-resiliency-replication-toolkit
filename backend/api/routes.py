@@ -180,6 +180,10 @@ async def validate_instance(request: ValidateInstanceRequest):
     # --- Extract instance ID from the resource part ---
     resource_part = parsed["resource"]  # e.g. "instance/abc-123-def"
     if not resource_part.startswith("instance/"):
+        # nosemgrep: python.django.security.injection.raw-html-format
+        # Not Django, not HTML — this is a FastAPI JSON 400 detail string. resource_part
+        # is the "resource" portion of a Connect ARN parsed by validate_arn(); it's not
+        # raw user-controlled HTML. The error is rendered as JSON by FastAPI, never as HTML.
         raise HTTPException(
             status_code=400,
             detail=f"ARN resource is not a Connect instance. Expected 'instance/<id>', got '{resource_part}'.",
@@ -319,6 +323,9 @@ async def discover(request: DiscoverRequest):
 
     resource_part = parsed["resource"]
     if not resource_part.startswith("instance/"):
+        # nosemgrep: python.django.security.injection.raw-html-format
+        # Not Django, not HTML — this is a FastAPI JSON 400 detail string. resource_part
+        # is the parsed ARN resource segment (validated above), rendered as JSON, never HTML.
         raise HTTPException(
             status_code=400,
             detail=f"ARN resource is not a Connect instance. Expected 'instance/<id>', got '{resource_part}'.",
@@ -615,7 +622,7 @@ def _invoke_replication_async(session_id: str, resource_ids: list[str], job_id: 
     """Invoke this Lambda function asynchronously to run replication.
 
     Uses InvocationType='Event' so the call returns immediately (202)
-    and the replication runs in a separate Lambda execution context.
+    and the replication runs in a separate AWS Lambda execution context.
 
     When not running in Lambda (local dev/tests), falls back to a
     background thread (which works fine outside Lambda since the process
@@ -746,7 +753,7 @@ async def get_replication_status(job_id: str, session_id: str | None = None):
     session = None
     job = None
 
-    # If session_id is provided, look up directly (works with DynamoDB store)
+    # If session_id is provided, look up directly (works with Amazon DynamoDB store)
     if session_id:
         try:
             session = await store.get_session(session_id)
@@ -809,7 +816,7 @@ async def retry_failed_resource(job_id: str, resource_id: str, session_id: str |
     session = None
     job = None
 
-    # If session_id is provided, look up directly (works with DynamoDB store)
+    # If session_id is provided, look up directly (works with Amazon DynamoDB store)
     if session_id:
         try:
             session = await store.get_session(session_id)
@@ -1786,7 +1793,7 @@ async def discover_target(request: DiscoverTargetRequest):
     """Discover existing resources in the target region that can be associated.
 
     Scans the target region for resources matching the source instance's
-    associated resources (Lex bots, Lambda functions, Kinesis streams, etc.)
+    associated resources (Amazon Lex bots, AWS Lambda functions, Kinesis streams, etc.)
     and returns which ones are already associated vs available for association.
     """
     from discovery.target_discovery import discover_target_resources
@@ -2343,7 +2350,7 @@ class ReplicateAsyncResponse(BaseModel):
     response_model=ReplicateAsyncResponse,
 )
 async def replicate_async(session_id: str, request: ReplicateAsyncRequest):
-    """Start a Step Functions execution for replication.
+    """Start a AWS Step Functions execution for replication.
 
     Creates a ReplicationJob, starts the SFN execution, and stores
     the execution ARN on the session.
@@ -2396,7 +2403,7 @@ async def replicate_async(session_id: str, request: ReplicateAsyncRequest):
     resource_tags = request.resourceTags or {}
     session.resource_tags = resource_tags
 
-    # Start Step Functions execution
+    # Start AWS Step Functions execution
     from replication.step_functions_orchestrator import start_replication_execution
 
     try:
@@ -2444,7 +2451,7 @@ class ExecutionStatusResponse(BaseModel):
     response_model=ExecutionStatusResponse,
 )
 async def get_sfn_execution_status(session_id: str):
-    """Poll Step Functions execution status for a session.
+    """Poll AWS Step Functions execution status for a session.
 
     Returns per-resource progress including which dependency level
     is currently executing.

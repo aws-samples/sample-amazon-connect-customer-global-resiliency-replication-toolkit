@@ -1,4 +1,4 @@
-"""Discovery orchestrator for Connect ACGR Resource Replicator.
+"""Discovery orchestrator for Amazon Connect ACGR Resource Replicator.
 
 Coordinates all discovery modules (Lambda, Lex, Streaming, KVS, DynamoDB),
 deduplicates resources by ARN, and builds a unified ResourceInventory.
@@ -50,7 +50,7 @@ def run_discovery(
     1. Lambda — discovers functions, IAM roles, ESM-triggered DynamoDB/Kinesis ARNs
     2. Lex — discovers bots, extracts fulfillment Lambda ARNs (added to Lambda results)
     3. Streaming — discovers CTR and Agent Event Stream Kinesis/Firehose resources
-    4. KVS — discovers Kinesis Video Streams and Lambda consumers (added to Lambda results)
+    4. KVS — discovers Amazon Kinesis Video Streams and Lambda consumers (added to Lambda results)
     5. DynamoDB — discovers tables from IAM policies, env vars, and ESM trigger ARNs
 
     After all modules run, resources are deduplicated by ARN and assembled

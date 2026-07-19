@@ -16,6 +16,7 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 from aws.client_factory import create_client, create_source_client, create_target_client
+from aws.arn_utils import ACGR_REGION_PAIRS
 
 logger = logging.getLogger(__name__)
 
@@ -192,20 +193,9 @@ def _check_acgr_enabled(instance_arn: str, source_region: str) -> dict[str, Any]
                 tdg_detail = tdg_desc.get("TrafficDistributionGroup", {})
                 # The TDG ARN region is the source; the replica is in the paired region
                 tdg_region = tdg_arn.split(":")[3] if ":" in tdg_arn else ""
-                # Common ACGR pairs
-                _ACGR_PAIRS = {
-                    "us-east-1": "us-west-2",
-                    "us-west-2": "us-east-1",
-                    "eu-west-2": "eu-central-1",
-                    "eu-central-1": "eu-west-2",
-                    "ap-southeast-1": "ap-northeast-1",
-                    "ap-northeast-1": "ap-southeast-1",
-                    "ap-southeast-2": "ap-northeast-2",
-                    "ap-northeast-2": "ap-southeast-2",
-                    "ca-central-1": "ca-west-1",
-                    "ca-west-1": "ca-central-1",
-                }
-                target_region = _ACGR_PAIRS.get(source_region)
+                # Resolve the paired target region from the authoritative
+                # ACGR region-pair map (single source of truth).
+                target_region = ACGR_REGION_PAIRS.get(source_region)
                 tdg_info = {
                     "name": tdg_name,
                     "arn": tdg_arn,

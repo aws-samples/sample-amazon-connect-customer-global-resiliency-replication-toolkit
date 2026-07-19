@@ -26,7 +26,6 @@ vi.mock("../api/client", () => ({
   replicateAsync: vi.fn(),
   getReplicationStatus: vi.fn(),
   addResource: vi.fn(),
-  healthCheck: vi.fn(),
   auditTarget: vi.fn(),
   diffSession: vi.fn(),
 }));

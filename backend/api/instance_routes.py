@@ -8,6 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from aws.client_factory import create_client
+from aws.arn_utils import supported_source_regions
 
 logger = logging.getLogger(__name__)
 
@@ -26,17 +27,10 @@ def _safe_error_detail(exc: Exception, user_message: str) -> str:
 
 instance_router = APIRouter()
 
-# Eight ACGR-supported regions
-ACGR_REGIONS = [
-    "us-east-1",
-    "us-west-2",
-    "eu-central-1",
-    "eu-west-2",
-    "ap-northeast-1",
-    "ap-northeast-2",
-    "ap-southeast-1",
-    "ap-southeast-2",
-]
+# ACGR-supported *source* regions. Derived from the authoritative
+# ACGR_REGION_PAIRS map so this list can never drift from what
+# validate-instance / discover will actually accept.
+ACGR_REGIONS = supported_source_regions()
 
 
 @instance_router.get("/api/list-instances")

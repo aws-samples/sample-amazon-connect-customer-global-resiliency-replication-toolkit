@@ -25,17 +25,15 @@ const FILTER_OPTIONS: SelectProps.Option[] = [
   { value: "lambda", label: "Lambda Only" },
 ];
 
+// ACGR-supported source regions only — must match the backend's list-instances
+// allow-list (derived from the authoritative region-pair map). Osaka
+// (ap-northeast-3) is a replica target only and is intentionally excluded.
 const CONNECT_REGIONS: SelectProps.Option[] = [
   { value: "us-east-1", label: "US East (N. Virginia)" },
   { value: "us-west-2", label: "US West (Oregon)" },
   { value: "eu-central-1", label: "Europe (Frankfurt)" },
   { value: "eu-west-2", label: "Europe (London)" },
   { value: "ap-northeast-1", label: "Asia Pacific (Tokyo)" },
-  { value: "ap-northeast-2", label: "Asia Pacific (Seoul)" },
-  { value: "ap-southeast-1", label: "Asia Pacific (Singapore)" },
-  { value: "ap-southeast-2", label: "Asia Pacific (Sydney)" },
-  { value: "af-south-1", label: "Africa (Cape Town)" },
-  { value: "ca-central-1", label: "Canada (Central)" },
 ];
 
 const POLL_INTERVAL_MS = 3000;

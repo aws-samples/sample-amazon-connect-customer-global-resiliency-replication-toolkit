@@ -16,18 +16,6 @@ from replication.dependency_graph import build_dependency_graph, topological_sor
 
 logger = logging.getLogger(__name__)
 
-# Region mapping for ARN rewriting
-_REGION_REWRITE = {
-    "us-east-1": "us-west-2",
-    "us-west-2": "us-east-1",
-    "eu-west-2": "eu-central-1",
-    "eu-central-1": "eu-west-2",
-    "ap-southeast-1": "ap-northeast-1",
-    "ap-northeast-1": "ap-southeast-1",
-    "ap-southeast-2": "ap-northeast-2",
-    "ap-northeast-2": "ap-southeast-2",
-}
-
 
 def _simulate_target_arn(resource: ResourceBase, target_region: str, resource_tags: dict[str, str] | None = None) -> str:
     """Generate a simulated target ARN for a resource.

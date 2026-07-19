@@ -15,7 +15,6 @@ import type {
   DiffResponse,
   DiscoverRequest,
   DiscoverResponse,
-  HealthResponse,
   InventoryResponse,
   ReplicateRequest,
   ReplicateResponse,
@@ -178,15 +177,6 @@ export function auditTarget(
     `/audit/${encodeURIComponent(sessionId)}`,
     { method: "POST", body: JSON.stringify(data) },
   );
-}
-
-// ---------------------------------------------------------------------------
-// Health
-// ---------------------------------------------------------------------------
-
-/** Health check with permission validation. */
-export function healthCheck(): Promise<HealthResponse> {
-  return request<HealthResponse>("/health");
 }
 
 // ---------------------------------------------------------------------------

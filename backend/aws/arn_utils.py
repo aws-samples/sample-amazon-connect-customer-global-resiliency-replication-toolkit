@@ -18,6 +18,20 @@ _SUPPORTED_PAIRS_DISPLAY = [
 ]
 
 
+def supported_source_regions() -> list[str]:
+    """Return the sorted list of AWS Regions that can act as an ACGR *source*.
+
+    These are the Regions in which an Amazon Connect instance can be selected
+    for replication. Osaka (ap-northeast-3) is intentionally excluded because
+    Amazon Connect Global Resiliency supports it as a replica target only.
+
+    This is the single source of truth for the set of regions the API accepts;
+    callers (e.g. instance listing) should derive their allow-lists from here
+    rather than hard-coding a separate list.
+    """
+    return sorted(ACGR_REGION_PAIRS.keys())
+
+
 def parse_arn(arn: str) -> dict:
     """Parse an ARN string into its component parts.
 

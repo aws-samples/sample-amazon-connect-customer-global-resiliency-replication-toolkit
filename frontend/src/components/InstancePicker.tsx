@@ -9,18 +9,16 @@ import Alert from "@cloudscape-design/components/alert";
 import { listInstances, validateInstance } from "../api/client";
 import type { ValidateInstanceResponse } from "../types";
 
-// All Connect-enabled regions
+// ACGR-supported source regions only. These match the backend's authoritative
+// region-pair map; listing an instance in any other region would be rejected by
+// validate-instance / discover, so we don't offer them here. Osaka
+// (ap-northeast-3) is a replica target only and is intentionally excluded.
 const CONNECT_REGIONS = [
   { value: "us-east-1", label: "US East (N. Virginia)" },
   { value: "us-west-2", label: "US West (Oregon)" },
   { value: "eu-central-1", label: "Europe (Frankfurt)" },
   { value: "eu-west-2", label: "Europe (London)" },
   { value: "ap-northeast-1", label: "Asia Pacific (Tokyo)" },
-  { value: "ap-northeast-2", label: "Asia Pacific (Seoul)" },
-  { value: "ap-southeast-1", label: "Asia Pacific (Singapore)" },
-  { value: "ap-southeast-2", label: "Asia Pacific (Sydney)" },
-  { value: "af-south-1", label: "Africa (Cape Town)" },
-  { value: "ca-central-1", label: "Canada (Central)" },
 ];
 
 interface InstanceOption {

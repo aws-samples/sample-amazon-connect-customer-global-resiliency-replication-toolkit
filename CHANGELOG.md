@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Instance-listing region allow-list now derives from the authoritative
+  `ACGR_REGION_PAIRS` map instead of a separate hard-coded list of eight
+  regions. Previously the `/api/list-instances` dropdown advertised
+  `ap-northeast-2`, `ap-southeast-1`, and `ap-southeast-2` — regions that
+  Amazon Connect Global Resiliency does not support — so selecting an instance
+  there failed at `validate-instance`/`discover` with a 400.
+- Quota comparison target-region resolution used an incorrect ACGR pairing
+  (`ap-southeast-1 ↔ ap-northeast-1`, `ca-central-1 ↔ ca-west-1`, etc.). It now
+  uses the authoritative `ACGR_REGION_PAIRS` map.
+- `ApprovedOriginResource` is now deserialized to its correct subclass from
+  DynamoDB (added to `_RESOURCE_TYPE_MAP`); previously it round-tripped as a
+  plain `ResourceBase` and silently dropped `origin_url` in the Lambda
+  deployment.
+- ARN format validation now accepts S3 bucket ARNs (`arn:aws:s3:::bucket`,
+  which have empty region and account fields) while still rejecting
+  non-numeric account IDs. Manually adding an S3 resource no longer 400s.
+- App-level CORS middleware no longer pairs `allow_origins=["*"]` with
+  `allow_credentials=True` (an invalid combination per the CORS spec).
+  Credentials are disabled; the scoped, authoritative origin allow-list
+  remains enforced at API Gateway.
+
+### Removed
+
+- Dead `healthCheck()` client function and `HealthResponse` type in the
+  frontend, left over after the `/api/health` endpoint was removed.
+- Unused, incorrectly-paired `_REGION_REWRITE` map in `dry_run.py`.
+
+### Changed
+
+- Instance-picker and Contact Flow Analysis region dropdowns now list only the
+  five ACGR-supported source regions, preventing dead-end selections.
+
 ## [1.0.0] - 2026-04-27
 
 ### Added

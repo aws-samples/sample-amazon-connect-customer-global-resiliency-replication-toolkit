@@ -11,6 +11,7 @@ from datetime import datetime
 import boto3
 
 from models.resources import (
+    ApprovedOriginResource,
     IAMRoleResource,
     KinesisFirehoseResource,
     KinesisStreamResource,
@@ -37,6 +38,7 @@ _RESOURCE_TYPE_MAP: dict[str, type[ResourceBase]] = {
     ResourceType.KINESIS_VIDEO_STREAM: KinesisVideoResource,
     ResourceType.IAM_ROLE: IAMRoleResource,
     ResourceType.S3_BUCKET: S3BucketResource,
+    ResourceType.APPROVED_ORIGIN: ApprovedOriginResource,
 }
 
 

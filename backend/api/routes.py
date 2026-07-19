@@ -43,9 +43,12 @@ def _safe_error_detail(exc: Exception, user_message: str) -> str:
 # Shared session store instance
 _session_store = create_session_store()
 
-# Regex for basic ARN format validation
+# Regex for basic ARN format validation.
+# The account-id group allows 0-12 digits so that service ARNs with an empty
+# account field (notably S3, e.g. "arn:aws:s3:::my-bucket") validate, while a
+# non-numeric account (garbage) is still rejected.
 _ARN_PATTERN = re.compile(
-    r"^arn:[a-z\-]+:[a-z0-9\-]+:[a-z0-9\-]*:\d{12}:.+"
+    r"^arn:[a-z\-]+:[a-z0-9\-]+:[a-z0-9\-]*:\d{0,12}:.+"
 )
 
 

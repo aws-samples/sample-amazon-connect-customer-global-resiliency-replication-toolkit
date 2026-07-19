@@ -149,14 +149,6 @@ export interface AddResourceResponse {
   resource: Resource;
 }
 
-export interface HealthResponse {
-  status: "healthy" | "degraded";
-  permissions: Record<
-    string,
-    { status: string; account?: string; arn?: string; error?: string }
-  >;
-}
-
 /** Standard error body returned by the backend. */
 export interface ApiError {
   detail: string;

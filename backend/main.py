@@ -17,10 +17,16 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# CORS: the authoritative, scoped origin allow-list is enforced at API Gateway
+# (restricted to the CloudFront distribution domain). This app-level middleware
+# is a permissive fallback for local development. Credentials are disabled
+# because the API is stateless and uses no cookies/authorization — pairing
+# `allow_origins=["*"]` with `allow_credentials=True` is invalid per the CORS
+# spec (browsers reject a wildcard origin on credentialed requests).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -142,7 +142,9 @@ def _get_replica_status(source_lex, bot_id: str, target_region: str) -> str | No
         return None
     for replica in resp.get("botReplicaSummaries", []):
         if replica.get("replicaRegion") == target_region:
-            return replica.get("replicaStatus", "")
+            # The Lex V2 ListBotReplicas response field is "botReplicaStatus"
+            # (values: Enabling | Enabled | Deleting | Failed), NOT "replicaStatus".
+            return replica.get("botReplicaStatus", "")
     return None
 
 

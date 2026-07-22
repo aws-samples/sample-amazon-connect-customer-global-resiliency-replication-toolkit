@@ -419,12 +419,6 @@ export default function SessionStatusPage({ initialSessionId }: Props) {
                   {sfnStatus.status}
                 </StatusIndicator>
               </Box>
-              {sfnStatus.current_level !== null && (
-                <Box>
-                  <Box variant="awsui-key-label">Current Level</Box>
-                  <Box>{sfnStatus.current_level + 1} of {sfnStatus.total_levels}</Box>
-                </Box>
-              )}
               {sfnStatus.started_at && (
                 <Box>
                   <Box variant="awsui-key-label">Started</Box>
@@ -453,7 +447,7 @@ export default function SessionStatusPage({ initialSessionId }: Props) {
               label="Replication progress"
               description={
                 sfnStatus.status === "RUNNING"
-                  ? `Level ${(sfnStatus.current_level ?? 0) + 1} of ${sfnStatus.total_levels} — ${sfnStatus.summary.succeeded} succeeded, ${sfnStatus.summary.failed} failed, ${sfnStatus.summary.in_progress} in progress`
+                  ? `${sfnStatus.summary.succeeded} succeeded, ${sfnStatus.summary.failed} failed, ${sfnStatus.summary.in_progress} in progress`
                   : `${sfnStatus.summary.succeeded} succeeded, ${sfnStatus.summary.failed} failed, ${sfnStatus.summary.blocked} blocked`
               }
               status={
@@ -500,12 +494,6 @@ export default function SessionStatusPage({ initialSessionId }: Props) {
                     header: "Type",
                     cell: (item) => item.resource_type.replace(/_/g, " "),
                     width: 130,
-                  },
-                  {
-                    id: "level",
-                    header: "Level",
-                    cell: (item) => item.level,
-                    width: 70,
                   },
                   {
                     id: "status",

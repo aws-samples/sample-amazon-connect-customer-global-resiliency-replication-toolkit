@@ -19,7 +19,7 @@ from io import BytesIO
 import requests
 from botocore.exceptions import ClientError
 
-from aws.arn_utils import rewrite_arn
+from aws.arn_utils import parse_arn, rewrite_arn
 from aws.client_factory import create_source_client, create_target_client
 from models.resources import LambdaResource
 
@@ -82,12 +82,31 @@ def _rewrite_env_vars(
 
 
 def _rewrite_layer_arns(
-    layers: list[str], target_region: str, layer_arn_mapping: dict[str, str] | None = None
+    layers: list[str],
+    target_region: str,
+    layer_arn_mapping: dict[str, str] | None = None,
+    owner_account: str | None = None,
 ) -> list[str]:
     """Rewrite layer ARNs to the target region using the layer mapping if available.
 
-    If a layer_arn_mapping is provided, uses the mapped ARN (from actual layer
-    replication). Otherwise falls back to simple region rewriting.
+    Resolution order for each layer:
+    1. If we successfully replicated the layer, use its mapped target ARN.
+    2. If the layer is owned by a *different* AWS account than the function
+       (e.g. AWS-managed extension layers such as ``aws-fis-extension`` owned by
+       an AWS service account, or any third-party layer), it cannot be
+       republished into the target region and our account has no access to it
+       there. Attaching a region-rewritten ARN would make ``CreateFunction``
+       fail with a ``GetLayerVersion`` AccessDenied. Such layers are therefore
+       **dropped** (skipped) with a warning rather than failing the whole
+       function replication.
+    3. Otherwise (same-account layer, no mapping) fall back to region rewriting.
+
+    Args:
+        layers: Source layer version ARNs attached to the function.
+        target_region: The ACGR target region.
+        layer_arn_mapping: Source layer ARN → replicated target ARN.
+        owner_account: The account that owns the function being replicated. When
+            provided, unmapped layers owned by a different account are dropped.
     """
     if not layer_arn_mapping:
         layer_arn_mapping = {}
@@ -98,7 +117,24 @@ def _rewrite_layer_arns(
         if layer_arn in layer_arn_mapping:
             rewritten.append(layer_arn_mapping[layer_arn])
             continue
-        # Fall back to region rewriting
+
+        # Drop cross-account layers we could not replicate — they are not
+        # accessible to this account in the target region and would cause
+        # CreateFunction to fail. AWS-managed extension layers (e.g.
+        # aws-fis-extension) are the common case.
+        try:
+            layer_owner = parse_arn(layer_arn)["account"]
+        except ValueError:
+            layer_owner = None
+        if owner_account and layer_owner and layer_owner != owner_account:
+            logger.warning(
+                "Dropping cross-account layer '%s' (owner %s != function owner %s); "
+                "it cannot be replicated or accessed in %s",
+                layer_arn, layer_owner, owner_account, target_region,
+            )
+            continue
+
+        # Fall back to region rewriting for same-account (or unknown-owner) layers
         try:
             rewritten.append(rewrite_arn(layer_arn, target_region))
         except ValueError:
@@ -321,9 +357,18 @@ def _create_function(
         lambda_resource.environment, target_region, source_region=source_region
     )
 
-    # Rewrite layer ARNs
+    # Rewrite layer ARNs. Pass the function's owner account so that
+    # un-replicable cross-account layers (e.g. the AWS FIS extension) are
+    # dropped rather than attached, which would fail CreateFunction.
+    try:
+        function_owner_account = parse_arn(lambda_resource.arn)["account"]
+    except ValueError:
+        function_owner_account = None
     rewritten_layers = _rewrite_layer_arns(
-        lambda_resource.layers, target_region, layer_arn_mapping=layer_arn_mapping
+        lambda_resource.layers,
+        target_region,
+        layer_arn_mapping=layer_arn_mapping,
+        owner_account=function_owner_account,
     )
 
     # Determine code parameter — use S3 staging for packages >50MB

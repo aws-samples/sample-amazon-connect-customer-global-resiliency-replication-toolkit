@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Lambda replication no longer fails when a source function references a
+  cross-account layer it cannot republish (e.g. the AWS-managed
+  `aws-fis-extension` layer owned by an AWS service account). Such layers are
+  now dropped from the replicated function with a warning instead of being
+  region-rewritten and attached, which previously caused `CreateFunction` to
+  fail with a `lambda:GetLayerVersion` AccessDenied and cascade-blocked any
+  dependent resources (e.g. a Lex bot whose codehook is that function).
+  Same-account layers are unaffected.
+
 - Instance-listing region allow-list now derives from the authoritative
   `ACGR_REGION_PAIRS` map instead of a separate hard-coded list of eight
   regions. Previously the `/api/list-instances` dropdown advertised

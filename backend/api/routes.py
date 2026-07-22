@@ -1599,6 +1599,70 @@ class SessionStatusResponse(BaseModel):
     replicationJobs: list[dict[str, Any]]
 
 
+async def _refresh_lex_replica_statuses(session: Session) -> bool:
+    """Live-check ALGR replica status for IN_PROGRESS Lex bots.
+
+    For each Lex bot resource that is IN_PROGRESS and carries a replicated ARN,
+    call ListBotReplicas in the source region. When the replica reaches
+    "Enabled", flip the resource to REPLICATED. Also mark FAILED if the replica
+    reports "Failed".
+
+    Returns True if any resource status changed (so the caller can persist).
+    """
+    from replication.lex_replication import _get_replica_status
+
+    changed = False
+    source_lex = None
+
+    for resource in session.inventory.values():
+        if resource.resource_type != ResourceType.LEX_BOT:
+            continue
+        if resource.status != ReplicationStatus.IN_PROGRESS:
+            continue
+        if not resource.replicated_arn:
+            continue
+
+        # bot_id is stable across ALGR regions; derive it from the source ARN
+        # (arn:aws:lex:<region>:<account>:bot/<botId>).
+        bot_id = resource.arn.rsplit("/", 1)[-1] if "/" in resource.arn else None
+        if not bot_id:
+            continue
+
+        if source_lex is None:
+            try:
+                source_lex = create_source_client("lexv2-models", session.source_region)
+            except Exception:
+                logger.warning("Could not create Lex client for replica status check", exc_info=True)
+                return changed
+
+        try:
+            replica_status = _get_replica_status(source_lex, bot_id, session.target_region)
+        except Exception:
+            logger.debug("Live ALGR replica status check failed for '%s'", resource.name, exc_info=True)
+            continue
+
+        if replica_status == "Enabled":
+            resource.status = ReplicationStatus.REPLICATED
+            resource.error = None
+            resource.error_classification = None
+            changed = True
+            logger.info(
+                "Lex bot '%s' ALGR replica now Enabled → marking REPLICATED",
+                resource.name,
+            )
+        elif replica_status == "Failed":
+            resource.status = ReplicationStatus.FAILED
+            resource.error = "ALGR replica entered Failed state"
+            changed = True
+            logger.warning("Lex bot '%s' ALGR replica entered Failed state", resource.name)
+        # "Enabling" (or None transient) → leave IN_PROGRESS, keep polling
+
+    if changed:
+        session.updated_at = datetime.now(timezone.utc)
+
+    return changed
+
+
 @router.get("/api/session/{session_id}/status")
 async def get_session_status(session_id: str):
     """Get comprehensive session status including replication and association state.
@@ -1615,6 +1679,32 @@ async def get_session_status(session_id: str):
 
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+
+    # Live re-check for Lex bots whose ALGR replica was still enabling.
+    # When CreateBotReplica succeeds the bot is marked IN_PROGRESS (not
+    # REPLICATED) and carries the replica ARN. On each status poll we call
+    # ListBotReplicas; once the replica reaches "Enabled" we flip the resource
+    # to REPLICATED and persist. This is the "refresh checks completion"
+    # behaviour — non-blocking replication that resolves on polling.
+    lex_status_changed = await _refresh_lex_replica_statuses(session)
+    if lex_status_changed:
+        # Recompute job progress counters so the UI progress bar reflects the
+        # newly-REPLICATED Lex bot(s).
+        from replication.orchestrator import _compute_progress
+        for job in session.replication_jobs:
+            selected = {
+                rid: session.inventory[rid]
+                for rid in job.selected_resource_ids
+                if rid in session.inventory
+            }
+            if selected:
+                job.progress = _compute_progress(selected)
+                if job.progress.failed == 0 and job.progress.blocked == 0:
+                    job.status = "COMPLETED"
+        try:
+            await _session_store.save_session(session)
+        except Exception:
+            logger.warning("Failed to persist Lex replica status update", exc_info=True)
 
     # Build inventory list with association status merged in
     inventory_list = []

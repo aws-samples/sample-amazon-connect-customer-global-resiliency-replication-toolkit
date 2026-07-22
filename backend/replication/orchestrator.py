@@ -24,7 +24,11 @@ from replication.dependency_graph import (
 )
 from replication.iam_replication import replicate_iam_role
 from replication.lambda_replication import replicate_lambda_function, replicate_lambda_layers
-from replication.lex_replication import replicate_lex_bot
+from replication.lex_replication import (
+    LexAlgrInProgressError,
+    LexAlgrSkippedError,
+    replicate_lex_bot,
+)
 from replication.s3_replication import replicate_s3_bucket
 from replication.streaming_replication import (
     replicate_firehose_stream,
@@ -427,8 +431,20 @@ def run_replication(
                             elif resource.resource_type == ResourceType.KINESIS_FIREHOSE:
                                 firehose_arn_mapping[resource.arn] = replicated_arn
                         logger.info("Successfully replicated '%s' → %s", resource.name, replicated_arn)
+                    elif isinstance(exc, LexAlgrInProgressError):
+                        # ALGR replica is enabling asynchronously — mark
+                        # IN_PROGRESS (not FAILED) and carry the replica ARN.
+                        # Each session-status poll re-checks and flips to
+                        # REPLICATED once the replica reaches "Enabled".
+                        resource.status = ReplicationStatus.IN_PROGRESS
+                        resource.replicated_arn = exc.replicated_arn
+                        resource.error = None
+                        resource.error_classification = None
+                        logger.info(
+                            "Lex bot '%s' ALGR replica enabling asynchronously (in progress)",
+                            resource.name,
+                        )
                     else:
-                        from replication.lex_replication import LexAlgrSkippedError
                         from replication.error_classification import classify_error
                         if isinstance(exc, LexAlgrSkippedError):
                             resource.status = ReplicationStatus.SKIPPED
@@ -501,9 +517,22 @@ def run_replication(
                         "Successfully replicated '%s' → %s", resource.name, replicated_arn
                     )
 
+                except LexAlgrInProgressError as exc:
+                    # ALGR replica is enabling asynchronously — mark IN_PROGRESS
+                    # (not FAILED) and carry the replica ARN. Each session-status
+                    # poll re-checks and flips to REPLICATED once "Enabled".
+                    # Do NOT cascade-block dependents.
+                    resource.status = ReplicationStatus.IN_PROGRESS
+                    resource.replicated_arn = exc.replicated_arn
+                    resource.error = None
+                    resource.error_classification = None
+                    logger.info(
+                        "Lex bot '%s' (%s) ALGR replica enabling asynchronously (in progress)",
+                        resource.name, rid,
+                    )
+
                 except Exception as exc:
                     # Handle Lex ALGR skip as a distinct status
-                    from replication.lex_replication import LexAlgrSkippedError
                     from replication.error_classification import classify_error
                     if isinstance(exc, LexAlgrSkippedError):
                         resource.status = ReplicationStatus.SKIPPED
@@ -712,6 +741,18 @@ def retry_resource(
                 s3_bucket_mapping=s3_bucket_mapping,
             )
 
+        except LexAlgrInProgressError as exc:
+            # ALGR replica is enabling asynchronously — mark IN_PROGRESS
+            # (not FAILED) and carry the replica ARN. Each session-status
+            # poll re-checks and flips to REPLICATED once "Enabled".
+            resource.status = ReplicationStatus.IN_PROGRESS
+            resource.replicated_arn = exc.replicated_arn
+            resource.error = None
+            logger.info(
+                "Lex bot '%s' ALGR replica enabling asynchronously on retry (in progress)",
+                resource.name,
+            )
+
         except Exception as exc:
             error_msg = str(exc)
             resource.status = ReplicationStatus.FAILED
@@ -816,6 +857,16 @@ def _retry_blocked_dependents(
                 session, job, dep_id, target_region, role_arn_mapping, lambda_arn_mapping,
                 resource_tags=resource_tags,
                 s3_bucket_mapping=s3_bucket_mapping,
+            )
+
+        except LexAlgrInProgressError as exc:
+            # ALGR replica enabling asynchronously — mark IN_PROGRESS, not FAILED.
+            dep_resource.status = ReplicationStatus.IN_PROGRESS
+            dep_resource.replicated_arn = exc.replicated_arn
+            dep_resource.error = None
+            logger.info(
+                "Dependent Lex bot '%s' ALGR replica enabling asynchronously (in progress)",
+                dep_resource.name,
             )
 
         except Exception as exc:

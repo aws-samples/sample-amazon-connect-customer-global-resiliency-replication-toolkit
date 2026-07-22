@@ -260,7 +260,29 @@ def _replicate_resource(
             }
 
         except Exception as exc:
-            from replication.lex_replication import LexAlgrSkippedError
+            from replication.lex_replication import (
+                LexAlgrInProgressError,
+                LexAlgrSkippedError,
+            )
+
+            if isinstance(exc, LexAlgrInProgressError):
+                # ALGR replica is enabling asynchronously — mark IN_PROGRESS
+                # (not FAILED) and carry the replica ARN. Session-status polls
+                # re-check ListBotReplicas and flip to REPLICATED once Enabled.
+                resource.status = ReplicationStatus.IN_PROGRESS
+                resource.replicated_arn = exc.replicated_arn
+                resource.error = None
+                resource.error_classification = None
+                session.inventory[resource_id] = resource
+                loop.run_until_complete(store.save_session(session))
+                return {
+                    "resource_id": resource_id,
+                    "status": "IN_PROGRESS",
+                    "replicated_arn": exc.replicated_arn,
+                    "error": None,
+                    "error_classification": None,
+                    "arn_mapping_update": None,
+                }
 
             if isinstance(exc, LexAlgrSkippedError):
                 resource.status = ReplicationStatus.SKIPPED

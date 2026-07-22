@@ -10,6 +10,7 @@ Requirements: 7.1, 7.2, 7.6, 7.7
 from __future__ import annotations
 
 import logging
+import os
 import time
 
 from botocore.exceptions import ClientError
@@ -114,6 +115,65 @@ def _wait_for_bot_available(lex_client, bot_id: str, max_wait: int = 60) -> None
     raise RuntimeError(
         f"Bot '{bot_id}' did not become Available within {max_wait}s"
     )
+
+
+class LexAlgrInProgressError(Exception):
+    """Raised when an ALGR replica was created/exists but is not yet Enabled.
+
+    This signals that replication is genuinely still in progress (not failed and
+    NOT complete). It must NOT be reported as REPLICATED, because the replica
+    bot is not yet usable in the target region and a subsequent Associate step
+    would fail with "bot does not exist". The resource should be retried once
+    the replica finishes enabling.
+    """
+
+
+# Max seconds to wait for an ALGR replica to reach the "Enabled" state before
+# treating replication as still-in-progress. Override with ALGR_ENABLE_WAIT_SECONDS.
+_ALGR_ENABLE_WAIT_SECONDS = int(os.environ.get("ALGR_ENABLE_WAIT_SECONDS", "300"))
+
+
+def _get_replica_status(source_lex, bot_id: str, target_region: str) -> str | None:
+    """Return the ALGR replica status for a bot in the target region, or None."""
+    try:
+        resp = source_lex.list_bot_replicas(botId=bot_id)
+    except Exception as exc:
+        logger.debug("list_bot_replicas failed for '%s': %s", bot_id, exc)
+        return None
+    for replica in resp.get("botReplicaSummaries", []):
+        if replica.get("replicaRegion") == target_region:
+            return replica.get("replicaStatus", "")
+    return None
+
+
+def _wait_for_replica_enabled(
+    source_lex, bot_id: str, target_region: str, max_wait: int | None = None
+) -> bool:
+    """Poll until the ALGR replica reaches 'Enabled'.
+
+    Returns True if the replica is Enabled within the wait window, False if it is
+    still enabling when the window elapses. Raises RuntimeError if the replica
+    reports a terminal failure state.
+    """
+    if max_wait is None:
+        max_wait = _ALGR_ENABLE_WAIT_SECONDS
+    elapsed = 0
+    interval = 10
+    while elapsed < max_wait:
+        status = _get_replica_status(source_lex, bot_id, target_region)
+        if status == "Enabled":
+            return True
+        if status in ("Failed", "Deleting"):
+            raise RuntimeError(
+                f"ALGR replica for bot '{bot_id}' entered terminal status '{status}'"
+            )
+        logger.info(
+            "Waiting for ALGR replica of bot '%s' in %s to become Enabled (status=%s)",
+            bot_id, target_region, status,
+        )
+        time.sleep(interval)
+        elapsed += interval
+    return False
 
 
 def replicate_lex_bot(
@@ -229,19 +289,37 @@ def _try_algr_replication(
     try:
         source_lex = create_source_client("lexv2-models", source_region)
 
+        replicated_arn = f"arn:aws:lex:{target_region}:{account_id}:bot/{bot_resource.bot_id}"
+
+        def _finalize_when_enabled() -> str:
+            """Return the replica ARN only once it is Enabled; else signal in-progress."""
+            if _wait_for_replica_enabled(source_lex, bot_resource.bot_id, target_region):
+                logger.info(
+                    "ALGR replica for bot '%s' is Enabled in %s → %s",
+                    bot_resource.name, target_region, replicated_arn,
+                )
+                return replicated_arn
+            raise LexAlgrInProgressError(
+                f"ALGR replica for bot '{bot_resource.name}' is still enabling in "
+                f"{target_region} (this is asynchronous and can take several minutes). "
+                f"Retry once the replica finishes enabling."
+            )
+
         # Check if a replica already exists in the target region
         try:
-            replicas_resp = source_lex.list_bot_replicas(botId=bot_resource.bot_id)
-            for replica in replicas_resp.get("botReplicaSummaries", []):
-                if replica.get("replicaRegion") == target_region:
-                    replica_status = replica.get("replicaStatus", "")
-                    if replica_status in ("Enabled", "Enabling", "Available"):
-                        replicated_arn = f"arn:aws:lex:{target_region}:{account_id}:bot/{bot_resource.bot_id}"
-                        logger.info(
-                            "ALGR replica already exists for bot '%s' in %s (status=%s) → %s",
-                            bot_resource.name, target_region, replica_status, replicated_arn,
-                        )
-                        return replicated_arn
+            replica_status = _get_replica_status(source_lex, bot_resource.bot_id, target_region)
+            if replica_status is not None:
+                if replica_status == "Enabled":
+                    logger.info(
+                        "ALGR replica already Enabled for bot '%s' in %s → %s",
+                        bot_resource.name, target_region, replicated_arn,
+                    )
+                    return replicated_arn
+                # Replica exists but is still enabling — wait for it, don't
+                # report REPLICATED prematurely.
+                return _finalize_when_enabled()
+        except LexAlgrInProgressError:
+            raise
         except Exception as list_exc:
             logger.debug(
                 "Could not list bot replicas for '%s': %s — will try CreateBotReplica or target lookup",
@@ -250,29 +328,29 @@ def _try_algr_replication(
 
         # Try creating the replica
         try:
-            response = source_lex.create_bot_replica(
+            source_lex.create_bot_replica(
                 botId=bot_resource.bot_id,
                 replicaRegion=target_region,
             )
-            replica_bot_id = response.get("botId", bot_resource.bot_id)
-            replicated_arn = f"arn:aws:lex:{target_region}:{account_id}:bot/{replica_bot_id}"
             logger.info(
-                "ALGR replication succeeded for bot '%s' → %s",
+                "ALGR CreateBotReplica issued for bot '%s' → %s (waiting for Enabled)",
                 bot_resource.name, replicated_arn,
             )
-            return replicated_arn
+            # Do NOT report success until the replica is actually Enabled.
+            return _finalize_when_enabled()
+        except LexAlgrInProgressError:
+            raise
         except ClientError as create_exc:
             error_code = create_exc.response.get("Error", {}).get("Code", "")
             if error_code in ("ConflictException", "ResourceInUseException", "PreconditionFailedException"):
-                # Replica already exists — return the ARN
-                replicated_arn = f"arn:aws:lex:{target_region}:{account_id}:bot/{bot_resource.bot_id}"
-                logger.info(
-                    "ALGR replica already exists for bot '%s' (ConflictException) → %s",
-                    bot_resource.name, replicated_arn,
-                )
-                return replicated_arn
+                # Replica already exists — but confirm it is Enabled before success.
+                return _finalize_when_enabled()
             raise  # Re-raise for the outer except to handle
 
+    except LexAlgrInProgressError:
+        # Genuinely still replicating — propagate so it is NOT reported as
+        # REPLICATED and is not masked by the target-name fallback below.
+        raise
     except Exception as exc:
         logger.warning(
             "ALGR replication failed for bot '%s' (%s → %s): %s",

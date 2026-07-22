@@ -23,6 +23,19 @@ function ValueWithLabel({ label, children }: { label: string; children: React.Re
 export default function RegionConfirmation({ instanceInfo }: RegionConfirmationProps) {
   return (
     <SpaceBetween size="l">
+      {/* ALGR prerequisite callout — Lex bot replication depends on Amazon Lex
+          Global Resiliency, which must be enabled/allowlisted for the account.
+          There is no AWS API to query allowlist status, so this is informational. */}
+      <Alert type="info" header="Amazon Lex Global Resiliency (ALGR) is required for Lex bots">
+        Lex V2 bots are replicated exclusively via <strong>Amazon Lex Global Resiliency
+        (ALGR)</strong> using the <Box variant="code" display="inline">CreateBotReplica</Box> API.
+        ALGR must be enabled/allow-listed for this AWS account and the{" "}
+        {instanceInfo.sourceRegion} → {instanceInfo.targetRegion} region pair before Lex bots can
+        be replicated. If ALGR is not enabled, Lex bot replication will fail — contact your AWS
+        account team to enable it. (AWS provides no API to query allow-list status, so this
+        prerequisite cannot be auto-detected.) Non-Lex resources are unaffected.
+      </Alert>
+
       <Container header={<Header variant="h2">Instance Details</Header>}>
         <ColumnLayout columns={2} variant="text-grid">
           <ValueWithLabel label="Instance Name">{instanceInfo.instanceName}</ValueWithLabel>

@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Lex bots are no longer reported `REPLICATED` before the ALGR replica actually
+  exists in the target region. Previously `_try_algr_replication` returned
+  success immediately after `CreateBotReplica` (and treated an `Enabling`
+  replica as done), so the UI showed the bot as replicated while it was still
+  provisioning — and a subsequent Associate step failed with "bot does not
+  exist". Replication now waits for the replica to reach `Enabled`
+  (configurable via `ALGR_ENABLE_WAIT_SECONDS`, default 300s); if it is still
+  enabling after the wait, the resource is reported as still-in-progress
+  (retryable) rather than a false success.
+
+### Changed
+
+- IAM roles are excluded from the replication selection UI (they are a global,
+  region-less service — the same role ARN is valid in the target region, so
+  there is nothing to copy). An informational alert explains this on the Select
+  Resources step; dependent resources keep referencing their existing role.
+  (Backend replication of IAM roles remains available if explicitly needed.)
+- Added an Amazon Lex Global Resiliency (ALGR) prerequisite banner to the
+  wizard's region-confirmation step, calling out that ALGR must be
+  enabled/allow-listed for the account for Lex bot replication to succeed.
+  (There is no AWS API to query ALGR allow-list status, so this is
+  informational and cannot be auto-detected.)
+
 - Lambda replication no longer fails when a source function references a
   cross-account layer it cannot republish (e.g. the AWS-managed
   `aws-fis-extension` layer owned by an AWS service account). Such layers are

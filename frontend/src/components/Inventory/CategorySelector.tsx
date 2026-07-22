@@ -5,6 +5,7 @@ import Table from "@cloudscape-design/components/table";
 import Header from "@cloudscape-design/components/header";
 import Box from "@cloudscape-design/components/box";
 import Checkbox from "@cloudscape-design/components/checkbox";
+import Alert from "@cloudscape-design/components/alert";
 import type { Resource } from "../../types";
 
 interface CategorySelectorProps {
@@ -38,9 +39,18 @@ export default function CategorySelector({
   selectedIds,
   onSelectionChange,
 }: CategorySelectorProps) {
+  // IAM roles are global (region-less) — the same role is used in both source
+  // and target regions, so there is nothing to replicate. They are excluded
+  // from selection here (see the alert below).
+  const iamRoleCount = useMemo(
+    () => resources.filter((r) => r.resource_type === "IAM_ROLE").length,
+    [resources],
+  );
+
   const grouped = useMemo(() => {
     const map = new Map<string, Resource[]>();
     for (const r of resources) {
+      if (r.resource_type === "IAM_ROLE") continue; // excluded — global
       const list = map.get(r.resource_type) ?? [];
       list.push(r);
       map.set(r.resource_type, list);
@@ -73,12 +83,24 @@ export default function CategorySelector({
   }
 
   const totalSelected = selectedIds.size;
+  const replicableCount = resources.length - iamRoleCount;
 
   return (
     <SpaceBetween size="l">
-      <Header variant="h2" counter={`(${totalSelected} of ${resources.length} selected)`}>
+      <Header variant="h2" counter={`(${totalSelected} of ${replicableCount} selected)`}>
         Select Resources to Replicate
       </Header>
+
+      {iamRoleCount > 0 && (
+        <Alert type="info" header="IAM roles are not replicated">
+          {iamRoleCount} IAM role{iamRoleCount === 1 ? "" : "s"} associated with these
+          resources {iamRoleCount === 1 ? "is" : "are"} excluded from replication. IAM is a
+          global (region-less) service — the same role ARN works in both the source and target
+          regions, so there is nothing to copy. Dependent resources (e.g. Lambda functions)
+          will continue to reference their existing role. If your setup requires per-region
+          roles, that can be enabled with a backend change.
+        </Alert>
+      )}
 
       {grouped.map(([type, items]) => {
         const selectedInCategory = items.filter((r) => selectedIds.has(r.id)).length;

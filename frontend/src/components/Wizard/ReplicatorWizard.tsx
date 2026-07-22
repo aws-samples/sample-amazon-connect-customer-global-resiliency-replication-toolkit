@@ -265,7 +265,14 @@ export default function ReplicatorWizard() {
       setSessionId(result.sessionId);
       setReplicateSessionId(result.sessionId);
       setResources(result.inventory);
-      setSelectedIds(new Set(result.inventory.map((r) => r.id)));
+      // IAM roles are global and not replicated — exclude them from selection.
+      setSelectedIds(
+        new Set(
+          result.inventory
+            .filter((r) => r.resource_type !== "IAM_ROLE")
+            .map((r) => r.id),
+        ),
+      );
       // Build a minimal instanceInfo from session data
       setInstanceInfo({
         instanceId: "",
@@ -305,7 +312,14 @@ export default function ReplicatorWizard() {
       const result = await discover({ instanceArn });
       setSessionId(result.sessionId);
       setResources(result.inventory);
-      setSelectedIds(new Set(result.inventory.map((r) => r.id)));
+      // IAM roles are global and not replicated — exclude them from selection.
+      setSelectedIds(
+        new Set(
+          result.inventory
+            .filter((r) => r.resource_type !== "IAM_ROLE")
+            .map((r) => r.id),
+        ),
+      );
       setActiveStep(3);
     } catch (err) {
       setDiscoveryError(err instanceof Error ? err.message : "Discovery failed");

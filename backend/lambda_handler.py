@@ -84,9 +84,12 @@ def _handle_association_task(event, context):
             logger.error("Session not found for association: %s", session_id)
             return {"statusCode": 404, "body": "Session not found"}
 
+        from association.resource_association import merge_association_results
         results = associate_resources(session)
 
-        session.association_results = results
+        session.association_results = merge_association_results(
+            session.association_results, results
+        )
         session.updated_at = datetime.now(timezone.utc)
         loop.run_until_complete(store.save_session(session))
 

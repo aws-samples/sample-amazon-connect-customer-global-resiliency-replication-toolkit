@@ -98,6 +98,37 @@ def _build_source_mappings(
 
 
 # ---------------------------------------------------------------------------
+# Result merging
+# ---------------------------------------------------------------------------
+
+def merge_association_results(
+    existing: list[dict[str, Any]] | None,
+    new: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Merge a fresh association run into the previously persisted results.
+
+    An association run only produces results for resources it actually
+    attempts — resources that are not yet REPLICATED at click-time are
+    skipped. Overwriting wholesale would then wipe the status of resources
+    that were successfully associated in an earlier run (making them look
+    "not attempted"). Instead we keep prior results for any resource this
+    run did not touch, and let the new run's results win for those it did.
+
+    Keyed by (resource, resource_type). All entries from ``new`` are kept
+    (S3 buckets legitimately produce one entry per storage type).
+    """
+    if not existing:
+        return new
+    new_keys = {(r.get("resource"), r.get("resource_type")) for r in new}
+    merged = [
+        r for r in existing
+        if (r.get("resource"), r.get("resource_type")) not in new_keys
+    ]
+    merged.extend(new)
+    return merged
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 

@@ -1491,8 +1491,11 @@ def _invoke_association_async(session_id: str) -> None:
                 if session is None:
                     logger.error("Session not found for association: %s", session_id)
                     return
+                from association.resource_association import merge_association_results
                 results = associate_resources(session)
-                session.association_results = results
+                session.association_results = merge_association_results(
+                    session.association_results, results
+                )
                 session.updated_at = datetime.now(timezone.utc)
                 loop.run_until_complete(store.save_session(session))
                 logger.info("Background association completed: session=%s", session_id)

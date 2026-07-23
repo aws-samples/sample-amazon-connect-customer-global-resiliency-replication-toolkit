@@ -1149,6 +1149,42 @@ class CleanupResponse(BaseModel):
     entries: list[dict[str, Any]]
 
 
+def _reset_cleaned_inventory(session, result) -> None:
+    """Reset successfully-deleted resources to NOT_REPLICATED in the inventory.
+
+    Most cleanup entries carry the inventory ``resource_id``. Some (notably
+    approved origins) use a synthetic id (e.g. ``approved-origin-<url>``) that
+    is NOT an inventory key — so fall back to matching by resource name + type.
+    Without this, the approved-origin row keeps showing REPLICATED after
+    deletion while every other resource resets correctly.
+    """
+    cleaned_names: set[str] = set()
+    for entry in result.entries:
+        if not entry.deleted:
+            continue
+        resource = session.inventory.get(entry.resource_id)
+        if resource is None:
+            for r in session.inventory.values():
+                rtype = r.resource_type.value if hasattr(r.resource_type, "value") else str(r.resource_type)
+                if r.name == entry.resource_name and rtype == entry.resource_type:
+                    resource = r
+                    break
+        if resource is not None:
+            resource.status = ReplicationStatus.NOT_REPLICATED
+            resource.replicated_arn = None
+            resource.error = None
+            cleaned_names.add(resource.name)
+
+    # Clear association results for cleaned-up resources
+    if session.association_results:
+        session.association_results = [
+            ar for ar in session.association_results
+            if ar.get("resource", "") not in cleaned_names
+        ]
+        if not session.association_results:
+            session.association_results = None
+
+
 @router.post("/api/cleanup/{session_id}", response_model=CleanupResponse)
 async def cleanup_session(session_id: str):
     """Disassociate and delete all replicated resources from the target region.
@@ -1202,27 +1238,9 @@ async def cleanup_session(session_id: str):
         target_instance_id=target_instance_id,
     )
 
-    # Reset cleaned-up resources to NOT_REPLICATED
-    for entry in result.entries:
-        if entry.deleted:
-            resource = session.inventory.get(entry.resource_id)
-            if resource:
-                resource.status = ReplicationStatus.NOT_REPLICATED
-                resource.replicated_arn = None
-                resource.error = None
-
-    # Clear association results for cleaned-up resources
-    if session.association_results:
-        cleaned_names = {
-            session.inventory[e.resource_id].name
-            for e in result.entries if e.deleted and e.resource_id in session.inventory
-        }
-        session.association_results = [
-            ar for ar in session.association_results
-            if ar.get("resource", "") not in cleaned_names
-        ]
-        if not session.association_results:
-            session.association_results = None
+    # Reset cleaned-up resources to NOT_REPLICATED (incl. approved origins,
+    # which use a synthetic cleanup id — matched by name + type).
+    _reset_cleaned_inventory(session, result)
 
     session.updated_at = datetime.now(timezone.utc)
 
@@ -1315,27 +1333,8 @@ async def selective_cleanup_session(session_id: str, request: SelectiveCleanupRe
         resource_ids=request.resourceIds,
     )
 
-    # Reset cleaned-up resources
-    for entry in result.entries:
-        if entry.deleted:
-            resource = session.inventory.get(entry.resource_id)
-            if resource:
-                resource.status = ReplicationStatus.NOT_REPLICATED
-                resource.replicated_arn = None
-                resource.error = None
-
-    # Clear association results for cleaned-up resources
-    if session.association_results:
-        cleaned_names = {
-            session.inventory[e.resource_id].name
-            for e in result.entries if e.deleted and e.resource_id in session.inventory
-        }
-        session.association_results = [
-            ar for ar in session.association_results
-            if ar.get("resource", "") not in cleaned_names
-        ]
-        if not session.association_results:
-            session.association_results = None
+    # Reset cleaned-up resources (incl. approved origins via name+type match).
+    _reset_cleaned_inventory(session, result)
 
     session.updated_at = datetime.now(timezone.utc)
 

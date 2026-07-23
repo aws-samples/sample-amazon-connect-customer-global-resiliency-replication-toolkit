@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, field_validator
 
 from aws.arn_utils import extract_region, parse_arn, resolve_target_region
@@ -1664,11 +1664,14 @@ async def _refresh_lex_replica_statuses(session: Session) -> bool:
 
 
 @router.get("/api/session/{session_id}/status")
-async def get_session_status(session_id: str):
+async def get_session_status(session_id: str, response: Response):
     """Get comprehensive session status including replication and association state.
 
     Powers the Session Status dashboard page.
     """
+    # Never let this be cached — the UI polls it and expects live association
+    # status. Stale cached responses were requiring a full browser reload.
+    response.headers["Cache-Control"] = "no-store"
     try:
         session = await _session_store.get_session(session_id)
     except Exception as exc:

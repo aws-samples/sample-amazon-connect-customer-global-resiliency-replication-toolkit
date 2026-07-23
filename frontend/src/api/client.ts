@@ -31,6 +31,10 @@ const BASE_URL = "/api";
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { "Content-Type": "application/json" },
+    // Never serve API responses from the browser HTTP cache. Without this a
+    // stale GET (e.g. session status) can be replayed to an in-app "Refresh"
+    // while only a full browser reload revalidates.
+    cache: "no-store",
     ...init,
   });
 
@@ -229,7 +233,10 @@ import type { SessionStatusResponse } from "../types";
 
 /** Get comprehensive session status including replication and association state. */
 export function getSessionStatus(sessionId: string): Promise<SessionStatusResponse> {
-  return request<SessionStatusResponse>(`/session/${encodeURIComponent(sessionId)}/status`);
+  // Cache-buster query param defeats any intermediate/browser caching so that
+  // each explicit refresh reflects the latest persisted association status.
+  const bust = `?_=${Date.now()}`;
+  return request<SessionStatusResponse>(`/session/${encodeURIComponent(sessionId)}/status${bust}`);
 }
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback } from "react";
 import Alert from "@cloudscape-design/components/alert";
 import Box from "@cloudscape-design/components/box";
 import Button from "@cloudscape-design/components/button";
@@ -6,13 +6,11 @@ import Checkbox from "@cloudscape-design/components/checkbox";
 import Container from "@cloudscape-design/components/container";
 import Header from "@cloudscape-design/components/header";
 import Modal from "@cloudscape-design/components/modal";
-import ProgressBar from "@cloudscape-design/components/progress-bar";
 import SpaceBetween from "@cloudscape-design/components/space-between";
 import Table from "@cloudscape-design/components/table";
 import StatusIndicator from "@cloudscape-design/components/status-indicator";
 import {
   getSessionStatus,
-  getExecutionStatus,
   retryAssociation,
   retryFailed,
   retryResource,
@@ -24,7 +22,6 @@ import type {
   SessionStatusResponse,
   SessionInventoryEntry,
   CleanupResponse,
-  ExecutionStatusResponse,
 } from "../../types";
 import ErrorClassificationBadge from "./ErrorClassificationBadge";
 import KmsInfoPanel from "./KmsInfoPanel";
@@ -50,6 +47,7 @@ function associationBadge(status: string) {
   switch (status) {
     case "associated":
     case "enabled":
+    case "created":
       return <StatusIndicator type="success">{status}</StatusIndicator>;
     case "already_associated":
     case "already_enabled":
@@ -58,6 +56,10 @@ function associationBadge(status: string) {
       return <StatusIndicator type="in-progress">Pending</StatusIndicator>;
     case "error":
       return <StatusIndicator type="error">Error</StatusIndicator>;
+    case "skipped":
+      return <StatusIndicator type="stopped">Skipped</StatusIndicator>;
+    case "manual_setup_required":
+      return <StatusIndicator type="warning">Manual setup</StatusIndicator>;
     default:
       return <StatusIndicator type="pending">Not attempted</StatusIndicator>;
   }
@@ -83,45 +85,6 @@ export default function SessionStatusPage({ initialSessionId }: Props) {
   const [cleanupResult, setCleanupResult] = useState<CleanupResponse | null>(null);
   const [showCleanupModal, setShowCleanupModal] = useState(false);
 
-  // Step Functions execution state
-  const [sfnStatus, setSfnStatus] = useState<ExecutionStatusResponse | null>(null);
-  const [sfnPolling, setSfnPolling] = useState(false);
-  const sfnPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Start SFN polling when session has an active execution
-  const startSfnPolling = useCallback((sessionId: string) => {
-    if (sfnPollRef.current) return; // already polling
-    setSfnPolling(true);
-    const poll = async () => {
-      try {
-        const status = await getExecutionStatus(sessionId);
-        setSfnStatus(status);
-        if (status.status !== "RUNNING") {
-          // Execution finished — stop polling and refresh session data
-          if (sfnPollRef.current) {
-            clearInterval(sfnPollRef.current);
-            sfnPollRef.current = null;
-          }
-          setSfnPolling(false);
-        }
-      } catch {
-        // Ignore transient poll errors
-      }
-    };
-    // Poll immediately, then every 3 seconds
-    poll();
-    sfnPollRef.current = setInterval(poll, 3000);
-  }, []);
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (sfnPollRef.current) {
-        clearInterval(sfnPollRef.current);
-      }
-    };
-  }, []);
-
   const fetchStatus = useCallback(async (sid?: string, retryFailed?: boolean) => {
     const id = sid ?? initialSessionId;
     if (!id) return;
@@ -130,19 +93,6 @@ export default function SessionStatusPage({ initialSessionId }: Props) {
     try {
       const result = await getSessionStatus(id);
       setData(result);
-
-      // Check if there's an active SFN execution to poll
-      // We detect this by trying to get execution status — if the session
-      // has an sfn_execution_arn, the backend will return it
-      try {
-        const execStatus = await getExecutionStatus(id);
-        setSfnStatus(execStatus);
-        if (execStatus.status === "RUNNING") {
-          startSfnPolling(id);
-        }
-      } catch {
-        // No SFN execution for this session — that's fine
-      }
 
       if (retryFailed && result) {
         const retryableItems = result.inventory.filter(
@@ -166,7 +116,7 @@ export default function SessionStatusPage({ initialSessionId }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [initialSessionId, startSfnPolling]);
+  }, [initialSessionId]);
 
   // Auto-load on mount
   useState(() => {
@@ -386,135 +336,6 @@ export default function SessionStatusPage({ initialSessionId }: Props) {
               <Alert type="error" dismissible onDismiss={() => setAssociateError(null)}>
                 {associateError}
               </Alert>
-            )}
-          </SpaceBetween>
-        </Container>
-      )}
-
-      {/* Step Functions execution progress */}
-      {sfnStatus && (
-        <Container
-          header={
-            <Header variant="h2">
-              Step Functions Replication
-              {sfnPolling && (
-                <Box display="inline" padding={{ left: "xs" }}>
-                  <StatusIndicator type="in-progress">Polling...</StatusIndicator>
-                </Box>
-              )}
-            </Header>
-          }
-        >
-          <SpaceBetween size="m">
-            <SpaceBetween direction="horizontal" size="l">
-              <Box>
-                <Box variant="awsui-key-label">Status</Box>
-                <StatusIndicator
-                  type={
-                    sfnStatus.status === "RUNNING" ? "in-progress"
-                    : sfnStatus.status === "SUCCEEDED" ? "success"
-                    : "error"
-                  }
-                >
-                  {sfnStatus.status}
-                </StatusIndicator>
-              </Box>
-              {sfnStatus.started_at && (
-                <Box>
-                  <Box variant="awsui-key-label">Started</Box>
-                  <Box>{new Date(sfnStatus.started_at).toLocaleString()}</Box>
-                </Box>
-              )}
-              {sfnStatus.completed_at && (
-                <Box>
-                  <Box variant="awsui-key-label">Completed</Box>
-                  <Box>{new Date(sfnStatus.completed_at).toLocaleString()}</Box>
-                </Box>
-              )}
-            </SpaceBetween>
-
-            {/* Progress bar */}
-            <ProgressBar
-              value={
-                sfnStatus.summary.total > 0
-                  ? Math.round(
-                      ((sfnStatus.summary.succeeded + sfnStatus.summary.failed + sfnStatus.summary.blocked) /
-                        sfnStatus.summary.total) *
-                        100
-                    )
-                  : 0
-              }
-              label="Replication progress"
-              description={
-                sfnStatus.status === "RUNNING"
-                  ? `${sfnStatus.summary.succeeded} succeeded, ${sfnStatus.summary.failed} failed, ${sfnStatus.summary.in_progress} in progress`
-                  : `${sfnStatus.summary.succeeded} succeeded, ${sfnStatus.summary.failed} failed, ${sfnStatus.summary.blocked} blocked`
-              }
-              status={
-                sfnStatus.status === "RUNNING" ? "in-progress"
-                : sfnStatus.status === "SUCCEEDED" ? undefined
-                : "error"
-              }
-            />
-
-            {/* Final summary */}
-            {sfnStatus.status !== "RUNNING" && (
-              <Alert
-                type={
-                  sfnStatus.summary.failed > 0 || sfnStatus.summary.blocked > 0
-                    ? "warning"
-                    : "success"
-                }
-                header="Replication Summary"
-              >
-                {sfnStatus.summary.succeeded} succeeded, {sfnStatus.summary.failed} failed, {sfnStatus.summary.blocked} blocked out of {sfnStatus.summary.total} total resources.
-              </Alert>
-            )}
-
-            {sfnStatus.error && (
-              <Alert type="error" header="Execution Error">
-                {sfnStatus.error}
-              </Alert>
-            )}
-
-            {/* Per-resource status from SFN */}
-            {sfnStatus.resources.length > 0 && (
-              <Table
-                header={<Header variant="h3" counter={`(${sfnStatus.resources.length})`}>Resource Progress</Header>}
-                items={sfnStatus.resources}
-                columnDefinitions={[
-                  {
-                    id: "name",
-                    header: "Name",
-                    cell: (item) => <Box variant="code">{item.resource_name}</Box>,
-                    width: 200,
-                  },
-                  {
-                    id: "type",
-                    header: "Type",
-                    cell: (item) => item.resource_type.replace(/_/g, " "),
-                    width: 130,
-                  },
-                  {
-                    id: "status",
-                    header: "Status",
-                    cell: (item) => replicationBadge(item.status),
-                    width: 130,
-                  },
-                  {
-                    id: "details",
-                    header: "Details",
-                    cell: (item) => {
-                      if (item.replicated_arn) return <Box fontSize="body-s">{item.replicated_arn}</Box>;
-                      if (item.error_classification) return <ErrorClassificationBadge classification={item.error_classification} />;
-                      if (item.error) return <Box fontSize="body-s" color="text-status-error">{item.error}</Box>;
-                      return "—";
-                    },
-                  },
-                ]}
-                variant="embedded"
-                empty="No resources"
-              />
             )}
           </SpaceBetween>
         </Container>

@@ -1602,13 +1602,74 @@ class SessionStatusResponse(BaseModel):
     replicationJobs: list[dict[str, Any]]
 
 
-async def _refresh_lex_replica_statuses(session: Session) -> bool:
-    """Live-check ALGR replica status for IN_PROGRESS Lex bots.
+def _account_from_arn(arn: str) -> str:
+    """Extract the account id from an ARN (arn:partition:svc:region:acct:...)."""
+    parts = arn.split(":")
+    return parts[4] if len(parts) > 4 else ""
 
-    For each Lex bot resource that is IN_PROGRESS and carries a replicated ARN,
-    call ListBotReplicas in the source region. When the replica reaches
-    "Enabled", flip the resource to REPLICATED. Also mark FAILED if the replica
-    reports "Failed".
+
+def _live_check_target_resource(resource, target_region: str) -> str | None:
+    """Return the replicated ARN if the resource exists in the target region, else None.
+
+    Uses the same naming the replicators use: S3/Kinesis/Firehose get a "-dr"
+    suffix; Lambda keeps the same name; Lex uses the ALGR replica (same bot id).
+    Read-only List/Describe calls only.
+    """
+    rtype = resource.resource_type
+    account = _account_from_arn(resource.arn)
+    name = resource.name
+
+    try:
+        if rtype == ResourceType.LAMBDA:
+            client = create_target_client("lambda", target_region)
+            resp = client.get_function(FunctionName=name)
+            return resp["Configuration"]["FunctionArn"]
+
+        if rtype == ResourceType.KINESIS_STREAM:
+            client = create_target_client("kinesis", target_region)
+            resp = client.describe_stream_summary(StreamName=f"{name}-dr")
+            return resp["StreamDescriptionSummary"]["StreamARN"]
+
+        if rtype == ResourceType.KINESIS_FIREHOSE:
+            client = create_target_client("firehose", target_region)
+            resp = client.describe_delivery_stream(DeliveryStreamName=f"{name}-dr")
+            return resp["DeliveryStreamDescription"]["DeliveryStreamARN"]
+
+        if rtype == ResourceType.S3_BUCKET:
+            client = create_target_client("s3", target_region)
+            client.head_bucket(Bucket=f"{name}-dr")
+            return f"arn:aws:s3:::{name}-dr"
+
+        if rtype == ResourceType.KINESIS_VIDEO_STREAM:
+            # KVS replication creates no physical stream — Connect makes streams
+            # on-the-fly per call and the MEDIA_STREAMS config is applied at
+            # association. Replication is a config-only no-op that always
+            # succeeds, so resolve to the same synthetic target ARN the
+            # replicator returns (mirrors replicate_kvs_stream).
+            parts = resource.arn.split(":")
+            if "/config/media-streams/" in resource.arn and len(parts) >= 5:
+                parts[3] = target_region
+                return ":".join(parts)
+            return (
+                f"arn:aws:kinesisvideo:{target_region}:{account}"
+                f":config/media-streams/{name}"
+            )
+
+    except Exception:
+        return None
+
+    return None
+
+
+async def _refresh_inprogress_resource_statuses(session: Session) -> bool:
+    """Live-check the target region for IN_PROGRESS resources and update status.
+
+    On every status poll, for each resource still marked IN_PROGRESS we call the
+    target-region List/Describe API to see whether the replica actually exists.
+    If it does, flip the resource to REPLICATED (recording the replicated ARN).
+    This recovers from cases where the async/Step Functions replication created
+    the resource but its status write-back was lost (e.g. concurrent session
+    saves clobbering each other). Lex bots use the ALGR replica status.
 
     Returns True if any resource status changed (so the caller can persist).
     """
@@ -1616,49 +1677,95 @@ async def _refresh_lex_replica_statuses(session: Session) -> bool:
 
     changed = False
     source_lex = None
+    target_connect = None
+    target_origins: list[str] | None = None
+
+    # Resolve target instance id for approved-origin checks.
+    target_instance_id = ""
+    try:
+        _res = parse_arn(session.instance_arn)["resource"]
+        if _res.startswith("instance/"):
+            target_instance_id = _res.split("/", 1)[1]
+    except Exception:
+        pass
 
     for resource in session.inventory.values():
-        if resource.resource_type != ResourceType.LEX_BOT:
-            continue
         if resource.status != ReplicationStatus.IN_PROGRESS:
             continue
-        if not resource.replicated_arn:
+
+        rtype = resource.resource_type
+
+        # Approved origins: check the target instance's approved-origin list.
+        if rtype == ResourceType.APPROVED_ORIGIN:
+            if not target_instance_id:
+                continue
+            if target_origins is None:
+                try:
+                    if target_connect is None:
+                        target_connect = create_target_client("connect", session.target_region)
+                    target_origins = []
+                    params: dict = {"InstanceId": target_instance_id, "MaxResults": 25}
+                    while True:
+                        resp = target_connect.list_approved_origins(**params)
+                        target_origins.extend(resp.get("Origins", []))
+                        nt = resp.get("NextToken")
+                        if not nt:
+                            break
+                        params["NextToken"] = nt
+                except Exception:
+                    logger.debug("Approved-origin live check failed", exc_info=True)
+                    target_origins = []
+            if resource.name in (target_origins or []):
+                resource.status = ReplicationStatus.REPLICATED
+                resource.replicated_arn = resource.name
+                resource.error = None
+                resource.error_classification = None
+                changed = True
+                logger.info("Live check: approved origin '%s' present on replica → REPLICATED", resource.name)
             continue
 
-        # bot_id is stable across ALGR regions; derive it from the source ARN
-        # (arn:aws:lex:<region>:<account>:bot/<botId>).
-        bot_id = resource.arn.rsplit("/", 1)[-1] if "/" in resource.arn else None
-        if not bot_id:
-            continue
-
-        if source_lex is None:
+        # Lex bots: use the ALGR replica status (Enabling → Enabled/Failed).
+        if rtype == ResourceType.LEX_BOT:
+            bot_id = resource.arn.rsplit("/", 1)[-1] if "/" in resource.arn else None
+            if not bot_id:
+                continue
+            if source_lex is None:
+                try:
+                    source_lex = create_source_client("lexv2-models", session.source_region)
+                except Exception:
+                    logger.warning("Could not create Lex client for replica status check", exc_info=True)
+                    continue
             try:
-                source_lex = create_source_client("lexv2-models", session.source_region)
+                replica_status = _get_replica_status(source_lex, bot_id, session.target_region)
             except Exception:
-                logger.warning("Could not create Lex client for replica status check", exc_info=True)
-                return changed
-
-        try:
-            replica_status = _get_replica_status(source_lex, bot_id, session.target_region)
-        except Exception:
-            logger.debug("Live ALGR replica status check failed for '%s'", resource.name, exc_info=True)
+                logger.debug("Live ALGR replica status check failed for '%s'", resource.name, exc_info=True)
+                continue
+            if replica_status == "Enabled":
+                resource.status = ReplicationStatus.REPLICATED
+                resource.error = None
+                resource.error_classification = None
+                changed = True
+                logger.info("Lex bot '%s' ALGR replica now Enabled → REPLICATED", resource.name)
+            elif replica_status == "Failed":
+                resource.status = ReplicationStatus.FAILED
+                resource.error = "ALGR replica entered Failed state"
+                changed = True
+                logger.warning("Lex bot '%s' ALGR replica entered Failed state", resource.name)
             continue
 
-        if replica_status == "Enabled":
+        # All other types: check whether the replica exists in the target region.
+        replicated_arn = _live_check_target_resource(resource, session.target_region)
+        if replicated_arn:
             resource.status = ReplicationStatus.REPLICATED
+            resource.replicated_arn = replicated_arn
             resource.error = None
             resource.error_classification = None
             changed = True
             logger.info(
-                "Lex bot '%s' ALGR replica now Enabled → marking REPLICATED",
-                resource.name,
+                "Live check: %s '%s' exists in %s → marking REPLICATED (%s)",
+                rtype.value if hasattr(rtype, "value") else rtype,
+                resource.name, session.target_region, replicated_arn,
             )
-        elif replica_status == "Failed":
-            resource.status = ReplicationStatus.FAILED
-            resource.error = "ALGR replica entered Failed state"
-            changed = True
-            logger.warning("Lex bot '%s' ALGR replica entered Failed state", resource.name)
-        # "Enabling" (or None transient) → leave IN_PROGRESS, keep polling
 
     if changed:
         session.updated_at = datetime.now(timezone.utc)
@@ -1686,13 +1793,13 @@ async def get_session_status(session_id: str, response: Response):
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
 
-    # Live re-check for Lex bots whose ALGR replica was still enabling.
-    # When CreateBotReplica succeeds the bot is marked IN_PROGRESS (not
-    # REPLICATED) and carries the replica ARN. On each status poll we call
-    # ListBotReplicas; once the replica reaches "Enabled" we flip the resource
-    # to REPLICATED and persist. This is the "refresh checks completion"
-    # behaviour — non-blocking replication that resolves on polling.
-    lex_status_changed = await _refresh_lex_replica_statuses(session)
+    # Live re-check for any IN_PROGRESS resource: on each status poll we call
+    # the target-region List/Describe API to see whether the replica actually
+    # exists, and flip it to REPLICATED if so. This is the "refresh checks
+    # completion" behaviour and it also recovers resources whose status
+    # write-back was lost by the async/Step Functions path (concurrent session
+    # saves clobbering each other). Lex bots use the ALGR replica status.
+    lex_status_changed = await _refresh_inprogress_resource_statuses(session)
     if lex_status_changed:
         # Recompute job progress counters so the UI progress bar reflects the
         # newly-REPLICATED Lex bot(s).

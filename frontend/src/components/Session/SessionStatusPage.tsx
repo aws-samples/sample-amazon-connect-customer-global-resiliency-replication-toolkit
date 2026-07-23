@@ -85,7 +85,7 @@ export default function SessionStatusPage({ initialSessionId }: Props) {
   const [cleanupResult, setCleanupResult] = useState<CleanupResponse | null>(null);
   const [showCleanupModal, setShowCleanupModal] = useState(false);
 
-  const fetchStatus = useCallback(async (sid?: string, retryFailed?: boolean) => {
+  const fetchStatus = useCallback(async (sid?: string) => {
     const id = sid ?? initialSessionId;
     if (!id) return;
     setLoading(true);
@@ -93,24 +93,6 @@ export default function SessionStatusPage({ initialSessionId }: Props) {
     try {
       const result = await getSessionStatus(id);
       setData(result);
-
-      if (retryFailed && result) {
-        const retryableItems = result.inventory.filter(
-          (item: SessionInventoryEntry) =>
-            item.association_status === "error" || item.association_status === "pending"
-        );
-        for (const item of retryableItems) {
-          try {
-            await retryAssociation(id, item.id);
-          } catch {
-            // Individual retry errors are non-fatal
-          }
-        }
-        if (retryableItems.length > 0) {
-          const updated = await getSessionStatus(id);
-          setData(updated);
-        }
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load session");
     } finally {
@@ -277,7 +259,7 @@ export default function SessionStatusPage({ initialSessionId }: Props) {
                   <Button
                     iconName="refresh"
                     loading={loading}
-                    onClick={() => fetchStatus(data.sessionId, true)}
+                    onClick={() => fetchStatus(data.sessionId)}
                   >
                     Refresh
                   </Button>

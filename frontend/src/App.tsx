@@ -7,6 +7,7 @@ import Toggle from "@cloudscape-design/components/toggle";
 import SideNavigation, { SideNavigationProps } from "@cloudscape-design/components/side-navigation";
 import ReplicatorWizard from "./components/Wizard/ReplicatorWizard";
 import SessionsListPage from "./components/Session/SessionsListPage";
+import "./failover-link.css";
 import SessionStatusPage from "./components/Session/SessionStatusPage";
 import QuotaComparison from "./components/Quota/QuotaComparison";
 import DiscoverAssociate from "./components/Discover/DiscoverAssociate";
@@ -73,11 +74,22 @@ export default function App() {
   return (
     <AppLayout
       navigation={
-        <SideNavigation
-          header={{ text: "ACGR Replicator", href: "#/" }}
-          items={navItems}
-          activeHref={activeHref}
-        />
+        <>
+          <SideNavigation
+            header={{ text: "ACGR Replicator", href: "#/" }}
+            items={navItems}
+            activeHref={activeHref}
+          />
+          <a
+            className="acgr-failover-link"
+            href="https://d2s6piob7oyqjz.cloudfront.net/#/agent-associations"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span className="acgr-failover-icon" aria-hidden="true">&#8599;</span>
+            Failover Tool
+          </a>
+        </>
       }
       toolsHide
       content={

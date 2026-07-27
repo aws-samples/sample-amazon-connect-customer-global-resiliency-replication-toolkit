@@ -181,3 +181,79 @@ class TestSessionStoreFactory:
             assert isinstance(store, DynamoDBSessionStore)
         finally:
             os.environ.pop("DEPLOYMENT_MODE", None)
+
+
+# ---------------------------------------------------------------------------
+# Concurrency fix: repl_status atomic map + overlay
+# ---------------------------------------------------------------------------
+
+class TestReplStatusOverlay:
+    """The DynamoDB store persists per-resource status in an atomically-updatable
+    `repl_status` map so parallel Step Functions writes don't clobber each other.
+    On read, repl_status must override the (possibly stale) compressed inventory.
+    """
+
+    def test_serialize_includes_repl_status(self):
+        from store.dynamodb_store import _serialize_session
+
+        r = _make_lambda_resource("r-1")
+        r.status = ReplicationStatus.IN_PROGRESS
+        s = _make_session(inventory={"r-1": r})
+
+        item = _serialize_session(s)
+        assert "repl_status" in item
+        assert item["repl_status"]["r-1"]["status"] == "IN_PROGRESS"
+
+    def test_deserialize_repl_status_overrides_stale_inventory(self):
+        from store.dynamodb_store import _serialize_session, _deserialize_session
+
+        # Inventory blob says IN_PROGRESS...
+        r = _make_lambda_resource("r-1")
+        r.status = ReplicationStatus.IN_PROGRESS
+        s = _make_session(inventory={"r-1": r})
+        item = _serialize_session(s)
+
+        # ...but a concurrent atomic update flipped repl_status to REPLICATED.
+        item["repl_status"]["r-1"] = {
+            "status": "REPLICATED",
+            "replicated_arn": "arn:aws:lambda:us-east-1:123456789012:function:r-1",
+            "error": None,
+            "error_classification": None,
+        }
+
+        restored = _deserialize_session(item)
+        rr = restored.inventory["r-1"]
+        assert rr.status == ReplicationStatus.REPLICATED
+        assert rr.replicated_arn.endswith(":function:r-1")
+
+    def test_legacy_item_without_repl_status_keeps_inventory_status(self):
+        from store.dynamodb_store import _serialize_session, _deserialize_session
+
+        r = _make_lambda_resource("r-1")
+        r.status = ReplicationStatus.REPLICATED
+        r.replicated_arn = "arn:aws:lambda:us-east-1:123456789012:function:r-1"
+        s = _make_session(inventory={"r-1": r})
+        item = _serialize_session(s)
+        del item["repl_status"]  # simulate a legacy item
+
+        restored = _deserialize_session(item)
+        assert restored.inventory["r-1"].status == ReplicationStatus.REPLICATED
+
+    def test_memory_store_update_resource_status(self):
+        store = InMemorySessionStore()
+        r = _make_lambda_resource("r-1")
+        r.status = ReplicationStatus.IN_PROGRESS
+        s = _make_session(inventory={"r-1": r})
+
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(store.save_session(s))
+            loop.run_until_complete(store.update_resource_status(
+                "sess-1", "r-1", "REPLICATED",
+                replicated_arn="arn:aws:lambda:us-east-1:123456789012:function:r-1",
+            ))
+            got = loop.run_until_complete(store.get_session("sess-1"))
+        finally:
+            loop.close()
+        assert got.inventory["r-1"].status == ReplicationStatus.REPLICATED
+        assert got.inventory["r-1"].replicated_arn.endswith(":function:r-1")

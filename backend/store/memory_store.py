@@ -19,6 +19,33 @@ class InMemorySessionStore(SessionStore):
     async def save_session(self, session: Session) -> None:
         self._sessions[session.session_id] = session
 
+    async def update_resource_status(
+        self,
+        session_id: str,
+        resource_id: str,
+        status: str,
+        replicated_arn: str | None = None,
+        error: str | None = None,
+        error_classification: dict | None = None,
+    ) -> None:
+        from datetime import datetime, timezone
+        from models.enums import ReplicationStatus
+
+        session = self._sessions.get(session_id)
+        if session is None:
+            return
+        resource = session.inventory.get(resource_id)
+        if resource is None:
+            return
+        try:
+            resource.status = ReplicationStatus(status)
+        except ValueError:
+            pass
+        resource.replicated_arn = replicated_arn
+        resource.error = error
+        resource.error_classification = error_classification
+        session.updated_at = datetime.now(timezone.utc)
+
     async def delete_session(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
 

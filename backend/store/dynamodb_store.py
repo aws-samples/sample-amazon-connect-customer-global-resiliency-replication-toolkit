@@ -6,7 +6,7 @@ import base64
 import gzip
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import boto3
 
@@ -74,6 +74,54 @@ class DynamoDBSessionStore(SessionStore):
     async def save_session(self, session: Session) -> None:
         item = _serialize_session(session)
         self._table.put_item(Item=item)
+
+    async def update_resource_status(
+        self,
+        session_id: str,
+        resource_id: str,
+        status: str,
+        replicated_arn: str | None = None,
+        error: str | None = None,
+        error_classification: dict | None = None,
+    ) -> None:
+        """Atomically update one resource's status in the ``repl_status`` map.
+
+        Uses a DynamoDB ``SET repl_status.#rid = :val`` update. Concurrent
+        updates to *different* map keys are applied atomically by DynamoDB and
+        do NOT clobber each other — unlike the whole-item ``put_item`` used by
+        save_session. This is what makes parallel Step Functions replication
+        persist every resource's status correctly.
+        """
+        value = {
+            "status": status,
+            "replicated_arn": replicated_arn,
+            "error": error,
+            # JSON-encode to sidestep DynamoDB float/Decimal constraints.
+            "error_classification": json.dumps(error_classification) if error_classification else None,
+        }
+        try:
+            self._table.update_item(
+                Key={"session_id": session_id},
+                UpdateExpression="SET repl_status.#rid = :val, updated_at = :ua",
+                ExpressionAttributeNames={"#rid": resource_id},
+                ExpressionAttributeValues={":val": value, ":ua": datetime.now(timezone.utc).isoformat()},
+                ConditionExpression="attribute_exists(session_id) AND attribute_exists(repl_status)",
+            )
+        except self._table.meta.client.exceptions.ConditionalCheckFailedException:
+            # repl_status map not initialized yet (legacy item) — create it,
+            # then retry the targeted key update.
+            self._table.update_item(
+                Key={"session_id": session_id},
+                UpdateExpression="SET repl_status = if_not_exists(repl_status, :empty)",
+                ExpressionAttributeValues={":empty": {}},
+                ConditionExpression="attribute_exists(session_id)",
+            )
+            self._table.update_item(
+                Key={"session_id": session_id},
+                UpdateExpression="SET repl_status.#rid = :val, updated_at = :ua",
+                ExpressionAttributeNames={"#rid": resource_id},
+                ExpressionAttributeValues={":val": value, ":ua": datetime.now(timezone.utc).isoformat()},
+            )
 
     async def delete_session(self, session_id: str) -> None:
         self._table.delete_item(Key={"session_id": session_id})
@@ -163,6 +211,19 @@ def _serialize_session(session: Session) -> dict:
         "ttl": int(time.time()) + _TTL_SECONDS,
         "_compressed": True,  # marker so deserializer knows the format
         "resource_count": len(session.inventory),
+        # Uncompressed per-resource status map — the authoritative, atomically
+        # updatable copy of each resource's replication status. Individual keys
+        # are updated concurrency-safely via update_resource_status(); on read
+        # this overlays the (possibly stale) compressed inventory blob.
+        "repl_status": {
+            rid: {
+                "status": r.status.value if hasattr(r.status, "value") else str(r.status),
+                "replicated_arn": r.replicated_arn,
+                "error": r.error,
+                "error_classification": json.dumps(r.error_classification) if r.error_classification else None,
+            }
+            for rid, r in session.inventory.items()
+        },
     }
 
     # Optional fields — only write when present to avoid storing nulls
@@ -194,6 +255,35 @@ def _deserialize_session(item: dict) -> Session:
         rid: _deserialize_resource(data)
         for rid, data in inventory_raw.items()
     }
+
+    # Overlay the authoritative per-resource status map (repl_status) onto the
+    # inventory. This map is updated atomically per resource, so it reflects the
+    # latest status even when the compressed inventory blob is stale (e.g. after
+    # concurrent Step Functions replication). Legacy items without repl_status
+    # keep the inventory's own status.
+    repl_status = item.get("repl_status")
+    if isinstance(repl_status, dict):
+        from models.enums import ReplicationStatus as _RS
+        for rid, st in repl_status.items():
+            resource = inventory.get(rid)
+            if resource is None or not isinstance(st, dict):
+                continue
+            status_val = st.get("status")
+            if status_val:
+                try:
+                    resource.status = _RS(status_val)
+                except ValueError:
+                    pass
+            resource.replicated_arn = st.get("replicated_arn")
+            resource.error = st.get("error")
+            ec = st.get("error_classification")
+            if ec:
+                try:
+                    resource.error_classification = json.loads(ec) if isinstance(ec, str) else ec
+                except (ValueError, TypeError):
+                    resource.error_classification = None
+            else:
+                resource.error_classification = None
 
     jobs = [ReplicationJob.model_validate(j) for j in jobs_raw]
 

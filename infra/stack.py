@@ -351,8 +351,15 @@ class ConnectAcgrReplicatorStack(Stack):
                     "wisdom:ListTagsForResource",
                     "wisdom:ListKnowledgeBases",
                     "wisdom:GetKnowledgeBase",
+                    "wisdom:GetAssistant",
                     "wisdom:CreateAssistant",
                     "wisdom:CreateKnowledgeBase",
+                    "wisdom:CreateAssistantAssociation",
+                    # CreateAssistant/CreateKnowledgeBase with tags require the
+                    # separate TagResource permission — without it the calls
+                    # fail with AccessDenied on wisdom:TagResource.
+                    "wisdom:TagResource",
+                    "wisdom:UntagResource",
                 ],
                 resources=["*"],
             )

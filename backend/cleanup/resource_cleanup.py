@@ -236,10 +236,15 @@ def cleanup_replicated_resources(
     # otherwise fall back to instance_id for backward compatibility.
     resolved_target_id = target_instance_id or instance_id
 
-    # Collect replicated resources — skip IAM roles (global, never delete)
+    # Collect resources to clean — anything that actually created something in
+    # the target region, i.e. carries a replicated ARN. This includes
+    # IN_PROGRESS resources (e.g. a Lex ALGR replica still enabling), so a
+    # mid-flight replica isn't orphaned by Disassociate & Delete. IAM roles are
+    # global and are never deleted.
+    _CLEANABLE_STATUSES = {ReplicationStatus.REPLICATED, ReplicationStatus.IN_PROGRESS}
     replicated = {
         rid: r for rid, r in inventory.items()
-        if r.status == ReplicationStatus.REPLICATED
+        if r.status in _CLEANABLE_STATUSES
         and r.replicated_arn
         and (r.resource_type if isinstance(r.resource_type, ResourceType) else ResourceType(r.resource_type)) != ResourceType.IAM_ROLE
     }

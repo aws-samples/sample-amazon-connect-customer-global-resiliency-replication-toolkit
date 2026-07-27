@@ -186,8 +186,11 @@ def _replicate_resource(
             resource.error = None
             resource.error_classification = None
 
-            session.inventory[resource_id] = resource
-            loop.run_until_complete(store.save_session(session))
+            # Atomic per-resource status write (concurrency-safe under parallel
+            # Step Functions Map execution — no whole-session clobber).
+            loop.run_until_complete(store.update_resource_status(
+                session_id, resource_id, "REPLICATED", replicated_arn=resource.arn,
+            ))
 
             return {
                 "resource_id": resource_id,
@@ -246,9 +249,10 @@ def _replicate_resource(
             # Determine ARN mapping type
             arn_mapping_update = _build_arn_mapping_update(resource, replicated_arn)
 
-            # Save updated resource to session
-            session.inventory[resource_id] = resource
-            loop.run_until_complete(store.save_session(session))
+            # Atomic per-resource status write (concurrency-safe).
+            loop.run_until_complete(store.update_resource_status(
+                session_id, resource_id, "REPLICATED", replicated_arn=replicated_arn,
+            ))
 
             return {
                 "resource_id": resource_id,
@@ -273,8 +277,9 @@ def _replicate_resource(
                 resource.replicated_arn = exc.replicated_arn
                 resource.error = None
                 resource.error_classification = None
-                session.inventory[resource_id] = resource
-                loop.run_until_complete(store.save_session(session))
+                loop.run_until_complete(store.update_resource_status(
+                    session_id, resource_id, "IN_PROGRESS", replicated_arn=exc.replicated_arn,
+                ))
                 return {
                     "resource_id": resource_id,
                     "status": "IN_PROGRESS",
@@ -297,9 +302,12 @@ def _replicate_resource(
                 resource.error_classification = error_class.model_dump()
                 status = "FAILED"
 
-            # Save updated resource to session
-            session.inventory[resource_id] = resource
-            loop.run_until_complete(store.save_session(session))
+            # Atomic per-resource status write (concurrency-safe).
+            loop.run_until_complete(store.update_resource_status(
+                session_id, resource_id, status,
+                error=str(exc),
+                error_classification=error_class.model_dump() if error_class else None,
+            ))
 
             return {
                 "resource_id": resource_id,

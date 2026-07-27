@@ -43,6 +43,26 @@ class SessionStore(ABC):
         ...
 
     @abstractmethod
+    async def update_resource_status(
+        self,
+        session_id: str,
+        resource_id: str,
+        status: str,
+        replicated_arn: str | None = None,
+        error: str | None = None,
+        error_classification: dict | None = None,
+    ) -> None:
+        """Atomically update a single resource's replication status.
+
+        This MUST be safe under concurrency: multiple callers updating
+        different resources in the same session (e.g. parallel Step Functions
+        Map iterations) must not clobber each other. Implementations should
+        update only the target resource's status, never rewrite the whole
+        inventory.
+        """
+        ...
+
+    @abstractmethod
     async def delete_session(self, session_id: str) -> None:
         """Delete a session by ID."""
         ...

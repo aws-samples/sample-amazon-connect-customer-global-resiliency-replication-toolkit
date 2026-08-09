@@ -50,6 +50,11 @@ class ConnectAcgrReplicatorStack(Stack):
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             removal_policy=RemovalPolicy.RETAIN,
             time_to_live_attribute="ttl",
+            # Point-in-time recovery (cdk-nag AwsSolutions-DDB3). Additive and
+            # applied in place — no downtime, no data migration.
+            point_in_time_recovery_specification=dynamodb.PointInTimeRecoverySpecification(
+                point_in_time_recovery_enabled=True,
+            ),
         )
 
         # DynamoDB Table — flow analysis jobs (ephemeral, 1-hour TTL)
@@ -63,6 +68,9 @@ class ConnectAcgrReplicatorStack(Stack):
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             removal_policy=RemovalPolicy.RETAIN,
             time_to_live_attribute="ttl",
+            point_in_time_recovery_specification=dynamodb.PointInTimeRecoverySpecification(
+                point_in_time_recovery_enabled=True,
+            ),
         )
 
         # ---------------------------------------------------------------
@@ -407,6 +415,8 @@ class ConnectAcgrReplicatorStack(Stack):
             memory_size=512,
             timeout=Duration.seconds(900),
             role=lambda_role,
+            # X-Ray active tracing (cdk-nag Serverless-LambdaTracing).
+            tracing=_lambda.Tracing.ACTIVE,
             environment={
                 "SESSION_TABLE_NAME": session_table.table_name,
                 "FLOW_ANALYSIS_TABLE_NAME": flow_analysis_table.table_name,
@@ -445,11 +455,28 @@ class ConnectAcgrReplicatorStack(Stack):
         outer_map.item_processor(inner_map)
 
         # State machine
+        # Execution log group for the state machine (cdk-nag AwsSolutions-SF1).
+        state_machine_log_group = logs.LogGroup(
+            self,
+            "ReplicationStateMachineLogs",
+            retention=logs.RetentionDays.ONE_MONTH,
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+
         state_machine = sfn.StateMachine(
             self,
             "ReplicationStateMachine",
             definition_body=sfn.DefinitionBody.from_chainable(outer_map),
             timeout=Duration.hours(2),
+            # Log ALL events (AwsSolutions-SF1). Execution data is excluded so
+            # inputs/outputs are not written to logs.
+            logs=sfn.LogOptions(
+                destination=state_machine_log_group,
+                level=sfn.LogLevel.ALL,
+                include_execution_data=False,
+            ),
+            # X-Ray tracing (AwsSolutions-SF2, Serverless-StepFunctionStateMachineXray).
+            tracing_enabled=True,
         )
 
         # Grant Step Functions permission to invoke the Resource Lambda
@@ -465,6 +492,8 @@ class ConnectAcgrReplicatorStack(Stack):
             memory_size=512,
             timeout=Duration.seconds(900),
             role=lambda_role,
+            # X-Ray active tracing (cdk-nag Serverless-LambdaTracing).
+            tracing=_lambda.Tracing.ACTIVE,
             environment={
                 "DEPLOYMENT_MODE": "lambda",
                 "SESSION_TABLE_NAME": session_table.table_name,
@@ -472,20 +501,6 @@ class ConnectAcgrReplicatorStack(Stack):
                 "STATE_MACHINE_ARN": state_machine.state_machine_arn,
                 "LOG_LEVEL": "INFO",
             },
-        )
-
-        # ---------------------------------------------------------------
-        # 4. S3 bucket — frontend static assets
-        # Hardened: SSE-S3 encryption at rest + TLS-only transport.
-        # ---------------------------------------------------------------
-        frontend_bucket = s3.Bucket(
-            self,
-            "FrontendBucket",
-            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
-            removal_policy=RemovalPolicy.DESTROY,
-            auto_delete_objects=True,
-            encryption=s3.BucketEncryption.S3_MANAGED,
-            enforce_ssl=True,
         )
 
         # S3 access log bucket for the frontend bucket and Amazon CloudFront distribution.
@@ -506,6 +521,24 @@ class ConnectAcgrReplicatorStack(Stack):
                     expiration=Duration.days(90),
                 ),
             ],
+        )
+
+        # ---------------------------------------------------------------
+        # 4. S3 bucket — frontend static assets
+        # Hardened: SSE-S3 encryption at rest + TLS-only transport.
+        # ---------------------------------------------------------------
+        frontend_bucket = s3.Bucket(
+            self,
+            "FrontendBucket",
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+            removal_policy=RemovalPolicy.DESTROY,
+            auto_delete_objects=True,
+            encryption=s3.BucketEncryption.S3_MANAGED,
+            enforce_ssl=True,
+            # Server access logging (cdk-nag AwsSolutions-S1). Target is the
+            # dedicated access-logs bucket created above.
+            server_access_logs_bucket=access_logs_bucket,
+            server_access_logs_prefix="s3-access-logs/frontend/",
         )
 
         # ---------------------------------------------------------------
@@ -631,6 +664,14 @@ class ConnectAcgrReplicatorStack(Stack):
                 ),
                 logging_level=apigw.MethodLoggingLevel.INFO,
                 metrics_enabled=True,
+                # X-Ray tracing (cdk-nag Serverless-APIGWXrayEnabled).
+                tracing_enabled=True,
+                # Stage-level default method throttling
+                # (cdk-nag Serverless-APIGWDefaultThrottling). Values match the
+                # existing usage plan (1000 rps / 2000 burst) so effective
+                # request behaviour is unchanged.
+                throttling_rate_limit=1000,
+                throttling_burst_limit=2000,
             ),
         )
 

@@ -1,2 +1,10 @@
-aws-cdk-lib>=2.100.0
+# Pinned upper bound: aws-cdk-lib >= 2.250 emits cloud assembly schema 54, which
+# requires AWS CDK CLI >= 2.1135.1. Keeping <2.250 stays compatible with older
+# CDK CLI installs. Raise both together if you upgrade the CLI.
+aws-cdk-lib>=2.100.0,<2.250.0
 constructs>=10.0.0
+
+# Security/compliance scanning (optional, report-only).
+# Enable with:  cdk synth -c nag=true
+# cdk-nag 3.x targets a newer Aspects API and is NOT compatible with aws-cdk-lib v2.
+cdk-nag>=2.27.0,<3.0.0

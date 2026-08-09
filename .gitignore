@@ -38,6 +38,10 @@ htmlcov/
 .env
 .env.local
 
+# Internal tooling / review artifacts — never publish these
+scan-report.json
+build.log
+
 # Vendored Python dependencies bundled into backend/ by deploy.sh for Lambda.
 # These are installed at deploy time from requirements.txt; they must never
 # be committed to the repo.

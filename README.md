@@ -2,7 +2,30 @@
 
 Serverless web application that discovers and replicates AWS resources associated with an Amazon Connect instance to its ACGR (Global Resiliency) paired disaster recovery region.
 
-> **NOTE:** This is a proof-of-concept tool intended for demonstration and internal evaluation. It is not production-hardened as shipped. See [SECURITY.md](SECURITY.md) for hardening notes and production follow-ups.
+> ## ⚠️ Not for production use
+>
+> **This is a proof of concept (PoC).** It is provided for demonstration, learning, and
+> evaluation only. **Do not run it against a production Amazon Connect instance and do
+> not deploy it into a production account as-is.**
+>
+> Before you consider using anything here beyond a PoC, you must:
+>
+> 1. **Test thoroughly in a lower environment first** (sandbox / dev / test account) and
+>    prove the behaviour end to end for *your* resource types, quotas, and region pair.
+> 2. **Validate every replication and cleanup path** against non-critical resources. The
+>    tool creates, associates, **and deletes** AWS resources in the target Region —
+>    cleanup is destructive and irreversible.
+> 3. **Review and scope down the IAM permissions.** The deployed Lambda role is broad by
+>    design so the PoC can operate across many services and two Regions. This is not
+>    least-privilege and is not suitable for production.
+> 4. **Add authentication.** The CloudFront-hosted UI and the API have no authentication
+>    by default; anyone who can reach the URL can trigger replication and deletion.
+> 5. **Confirm your own security, compliance, data-residency, and change-management
+>    requirements** are met, and have the deployment reviewed by your security team.
+>
+> Promote it only after it has been proven in a lower environment and hardened. You are
+> responsible for anything you deploy or run in your own AWS accounts. See
+> [SECURITY.md](SECURITY.md) for the known gaps and hardening follow-ups.
 
 ## Getting started
 

@@ -42,6 +42,9 @@ htmlcov/
 scan-report.json
 build.log
 
+# Security scan exports and their triage notes — kept locally only
+SecurityFindings/
+
 # Vendored Python dependencies bundled into backend/ by deploy.sh for Lambda.
 # These are installed at deploy time from requirements.txt; they must never
 # be committed to the repo.

@@ -2,7 +2,8 @@
 
 Creates S3 buckets in the target region with matching configuration
 (encryption, versioning, bucket policy, CORS, lifecycle rules) and a
-hardcoded '-dr' suffix (S3 bucket names must be globally unique).
+configurable replica suffix (default '-dr'; S3 bucket names must be globally
+unique). See aws.naming for the suffix source of truth.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import json
 import logging
 
 from aws.client_factory import create_source_client, create_target_client
+from aws.naming import target_replica_name
 from models.resources import ResourceBase
 
 logger = logging.getLogger(__name__)
@@ -35,7 +37,7 @@ def replicate_s3_bucket(
         The ARN of the created bucket.
     """
     source_name = resource.name
-    target_name = f"{source_name}-dr"
+    target_name = target_replica_name(source_name)
 
     s3_client = create_target_client("s3", target_region)
 

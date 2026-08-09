@@ -461,20 +461,27 @@ def _disassociate_lambda(connect_client, instance_id: str, function_arn: str) ->
 def _disassociate_lex_bot(connect_client, instance_id: str, bot_arn: str, target_region: str) -> None:
     """Disassociate a Lex V2 bot from the Connect instance."""
     # We need the alias ARN, not the bot ARN. List associated bots to find it.
+    # Paginate: an instance can have far more than one page of associated bots,
+    # and a bot on a later page would otherwise be missed and left orphaned.
     try:
-        resp = connect_client.list_bots(InstanceId=instance_id, LexVersion="V2", MaxResults=25)
-        for bot_summary in resp.get("LexBots", []):
-            lex_bot = bot_summary.get("LexV2Bot", {})
-            alias_arn = lex_bot.get("AliasArn", "")
-            # Match by bot ID from the ARN
-            parts = bot_arn.split("/")
-            bot_id = parts[-1] if len(parts) >= 2 else ""
-            if bot_id and bot_id in alias_arn:
-                connect_client.disassociate_bot(
-                    InstanceId=instance_id,
-                    LexV2Bot={"AliasArn": alias_arn},
-                )
-                return
+        parts = bot_arn.split("/")
+        bot_id = parts[-1] if len(parts) >= 2 else ""
+        params: dict = {"InstanceId": instance_id, "LexVersion": "V2", "MaxResults": 25}
+        while True:
+            resp = connect_client.list_bots(**params)
+            for bot_summary in resp.get("LexBots", []):
+                lex_bot = bot_summary.get("LexV2Bot", {})
+                alias_arn = lex_bot.get("AliasArn", "")
+                if bot_id and bot_id in alias_arn:
+                    connect_client.disassociate_bot(
+                        InstanceId=instance_id,
+                        LexV2Bot={"AliasArn": alias_arn},
+                    )
+                    return
+            next_token = resp.get("NextToken")
+            if not next_token:
+                break
+            params["NextToken"] = next_token
         logger.debug("Lex bot %s not found in associated bots", bot_arn)
     except Exception as exc:
         if "not found" in str(exc).lower():

@@ -15,6 +15,7 @@ import logging
 from botocore.exceptions import ClientError
 
 from aws.client_factory import create_target_client
+from aws.naming import target_replica_name
 from models.resources import (
     KinesisFirehoseResource,
     KinesisStreamResource,
@@ -51,8 +52,9 @@ def replicate_kinesis_stream(stream: KinesisStreamResource, target_region: str, 
         "Creating Kinesis Data Stream '%s' in %s", stream.name, target_region
     )
 
+    target_stream_name = target_replica_name(stream.name)
     create_params: dict = {
-        "StreamName": f"{stream.name}-dr",
+        "StreamName": target_stream_name,
         "StreamModeDetails": {"StreamMode": stream.stream_mode},
     }
 
@@ -60,7 +62,6 @@ def replicate_kinesis_stream(stream: KinesisStreamResource, target_region: str, 
     if stream.stream_mode == "PROVISIONED":
         create_params["ShardCount"] = stream.shard_count
 
-    target_stream_name = f"{stream.name}-dr"
     already_exists = False
 
     try:
@@ -182,7 +183,7 @@ def replicate_firehose_stream(
         target_region,
     )
 
-    target_name = f"{stream.name}-dr"
+    target_name = target_replica_name(stream.name)
     create_params: dict = {
         "DeliveryStreamName": target_name,
         "DeliveryStreamType": "DirectPut",

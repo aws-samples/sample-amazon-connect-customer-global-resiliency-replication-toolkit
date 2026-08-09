@@ -1614,9 +1614,12 @@ def _live_check_target_resource(resource, target_region: str) -> str | None:
     suffix; Lambda keeps the same name; Lex uses the ALGR replica (same bot id).
     Read-only List/Describe calls only.
     """
+    from aws.naming import target_replica_name
+
     rtype = resource.resource_type
     account = _account_from_arn(resource.arn)
     name = resource.name
+    dr_name = target_replica_name(name)
 
     try:
         if rtype == ResourceType.LAMBDA:
@@ -1626,18 +1629,18 @@ def _live_check_target_resource(resource, target_region: str) -> str | None:
 
         if rtype == ResourceType.KINESIS_STREAM:
             client = create_target_client("kinesis", target_region)
-            resp = client.describe_stream_summary(StreamName=f"{name}-dr")
+            resp = client.describe_stream_summary(StreamName=dr_name)
             return resp["StreamDescriptionSummary"]["StreamARN"]
 
         if rtype == ResourceType.KINESIS_FIREHOSE:
             client = create_target_client("firehose", target_region)
-            resp = client.describe_delivery_stream(DeliveryStreamName=f"{name}-dr")
+            resp = client.describe_delivery_stream(DeliveryStreamName=dr_name)
             return resp["DeliveryStreamDescription"]["DeliveryStreamARN"]
 
         if rtype == ResourceType.S3_BUCKET:
             client = create_target_client("s3", target_region)
-            client.head_bucket(Bucket=f"{name}-dr")
-            return f"arn:aws:s3:::{name}-dr"
+            client.head_bucket(Bucket=dr_name)
+            return f"arn:aws:s3:::{dr_name}"
 
         if rtype == ResourceType.KINESIS_VIDEO_STREAM:
             # KVS replication creates no physical stream — Connect makes streams
@@ -1772,6 +1775,149 @@ async def _refresh_inprogress_resource_statuses(session: Session) -> bool:
     return changed
 
 
+_ASSOC_DONE_STATUSES = {
+    "associated", "already_associated", "already_enabled", "enabled",
+    "created", "skipped", "manual_setup_required",
+}
+
+
+async def _verify_associations_live(session: Session, association_map: dict[str, dict]) -> dict[str, str]:
+    """Read-only, batched, gated live verification of associations.
+
+    Returns {resource_name: "associated"} for REPLICATED resources found
+    associated on the target instance whose persisted status isn't already
+    terminal. Scalability:
+      * Gated — if every REPLICATED resource already has a terminal association
+        status, this returns immediately with ZERO AWS calls.
+      * Batched — makes at most one List call per *resource type* (not per
+        resource), so cost is O(types), independent of inventory size.
+      * Read-only — never writes the session, so no per-poll write amplification
+        and no clobber risk.
+    """
+    candidates = [
+        r for r in session.inventory.values()
+        if r.status == ReplicationStatus.REPLICATED
+        and (association_map.get(r.name) or {}).get("status") not in _ASSOC_DONE_STATUSES
+    ]
+    if not candidates:
+        return {}
+
+    try:
+        _res = parse_arn(session.instance_arn)["resource"]
+        target_instance_id = _res.split("/", 1)[1] if _res.startswith("instance/") else ""
+    except Exception:
+        return {}
+    if not target_instance_id:
+        return {}
+
+    try:
+        connect = create_target_client("connect", session.target_region)
+    except Exception:
+        return {}
+
+    types = {r.resource_type for r in candidates}
+
+    def _paginated(fn, key: str, **extra) -> list:
+        items: list = []
+        params = {"InstanceId": target_instance_id, "MaxResults": 25, **extra}
+        while True:
+            resp = fn(**params)
+            items.extend(resp.get(key, []))
+            nt = resp.get("NextToken")
+            if not nt:
+                break
+            params["NextToken"] = nt
+        return items
+
+    assoc_lambda_arns: set[str] = set()
+    assoc_bot_arns: set[str] = set()
+    origins: set[str] = set()
+    s3_buckets: set[str] = set()
+    kinesis_arns: set[str] = set()
+    firehose_arns: set[str] = set()
+    kvs_present = False
+
+    if ResourceType.LAMBDA in types:
+        try:
+            assoc_lambda_arns = set(_paginated(connect.list_lambda_functions, "LambdaFunctions"))
+        except Exception:
+            logger.debug("assoc verify: list_lambda_functions failed", exc_info=True)
+    if ResourceType.LEX_BOT in types:
+        try:
+            for b in _paginated(connect.list_bots, "LexBots", LexVersion="V2"):
+                arn = (b.get("LexV2Bot") or {}).get("AliasArn", "")
+                if arn:
+                    assoc_bot_arns.add(arn)
+        except Exception:
+            logger.debug("assoc verify: list_bots failed", exc_info=True)
+    if ResourceType.APPROVED_ORIGIN in types:
+        try:
+            origins = set(_paginated(connect.list_approved_origins, "Origins"))
+        except Exception:
+            logger.debug("assoc verify: list_approved_origins failed", exc_info=True)
+
+    st_types: list[str] = []
+    if ResourceType.S3_BUCKET in types:
+        st_types += ["CALL_RECORDINGS", "CHAT_TRANSCRIPTS", "SCHEDULED_REPORTS"]
+    if ResourceType.KINESIS_STREAM in types or ResourceType.KINESIS_FIREHOSE in types:
+        st_types += ["AGENT_EVENTS", "CONTACT_TRACE_RECORDS"]
+    if ResourceType.KINESIS_VIDEO_STREAM in types:
+        st_types += ["MEDIA_STREAMS"]
+    for st in st_types:
+        try:
+            resp = connect.list_instance_storage_configs(InstanceId=target_instance_id, ResourceType=st)
+        except Exception:
+            continue
+        for cfg in resp.get("StorageConfigs", []):
+            stype = cfg.get("StorageType")
+            if stype == "S3":
+                b = cfg.get("S3Config", {}).get("BucketName", "")
+                if b:
+                    s3_buckets.add(b)
+            elif stype == "KINESIS_STREAM":
+                a = cfg.get("KinesisStreamConfig", {}).get("StreamArn", "")
+                if a:
+                    kinesis_arns.add(a)
+            elif stype == "KINESIS_FIREHOSE":
+                a = cfg.get("KinesisFirehoseConfig", {}).get("FirehoseArn", "")
+                if a:
+                    firehose_arns.add(a)
+            elif stype == "KINESIS_VIDEO_STREAM":
+                kvs_present = True
+
+    def _fn_name(arn: str) -> str:
+        return arn.split(":function:")[-1] if ":function:" in arn else arn
+
+    verified: dict[str, str] = {}
+    for r in candidates:
+        rt = r.resource_type
+        arn = r.replicated_arn or ""
+        found = False
+        if rt == ResourceType.LAMBDA:
+            found = arn in assoc_lambda_arns or (
+                ":function:" in arn and any(_fn_name(arn) == _fn_name(a) for a in assoc_lambda_arns)
+            )
+        elif rt == ResourceType.LEX_BOT:
+            bot_id = arn.rsplit("/", 1)[-1] if "/" in arn else ""
+            found = bool(bot_id) and any(bot_id in a for a in assoc_bot_arns)
+        elif rt == ResourceType.APPROVED_ORIGIN:
+            found = r.name in origins
+        elif rt == ResourceType.S3_BUCKET:
+            bucket = arn.split(":::")[-1] if ":::" in arn else ""
+            found = bool(bucket) and bucket in s3_buckets
+        elif rt == ResourceType.KINESIS_STREAM:
+            found = bool(arn) and arn in kinesis_arns
+        elif rt == ResourceType.KINESIS_FIREHOSE:
+            found = bool(arn) and arn in firehose_arns
+        elif rt == ResourceType.KINESIS_VIDEO_STREAM:
+            found = kvs_present
+        if found:
+            verified[r.name] = "associated"
+    return verified
+
+
+
+
 @router.get("/api/session/{session_id}/status")
 async def get_session_status(session_id: str, response: Response):
     """Get comprehensive session status including replication and association state.
@@ -1798,8 +1944,11 @@ async def get_session_status(session_id: str, response: Response):
     # completion" behaviour and it also recovers resources whose status
     # write-back was lost by the async/Step Functions path (concurrent session
     # saves clobbering each other). Lex bots use the ALGR replica status.
-    lex_status_changed = await _refresh_inprogress_resource_statuses(session)
-    if lex_status_changed:
+    repl_changed = await _refresh_inprogress_resource_statuses(session)
+    # NOTE: association status is reconciled separately, read-only, further
+    # down via _verify_associations_live() — deliberately NOT persisted, so a
+    # refresh never amplifies writes. See that function for the rationale.
+    if repl_changed:
         # Recompute job progress counters so the UI progress bar reflects the
         # newly-REPLICATED Lex bot(s).
         from replication.orchestrator import _compute_progress
@@ -1826,6 +1975,27 @@ async def get_session_status(session_id: str, response: Response):
             key = ar.get("resource", "")
             if key:
                 association_map[key] = ar
+
+    # Live association self-heal (read-only, batched, gated): reflect the true
+    # associated state on the replica for any REPLICATED resource whose stored
+    # status isn't already terminal. Does nothing (zero AWS calls) once every
+    # resource is associated.
+    try:
+        live_assoc = await _verify_associations_live(session, association_map)
+    except Exception:
+        logger.debug("Live association verification failed (non-fatal)", exc_info=True)
+        live_assoc = {}
+    for name, status in live_assoc.items():
+        existing = association_map.get(name)
+        if existing is None:
+            association_map[name] = {
+                "resource": name,
+                "status": status,
+                "message": "Verified associated on the replica instance",
+            }
+        elif existing.get("status") not in _ASSOC_DONE_STATUSES:
+            existing["status"] = status
+            existing["message"] = "Verified associated on the replica instance"
 
     for rid, resource in session.inventory.items():
         entry: dict[str, Any] = {

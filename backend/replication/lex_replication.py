@@ -108,7 +108,7 @@ def _wait_for_bot_available(lex_client, bot_id: str, max_wait: int = 60) -> None
             logger.debug("Bot '%s' status: %s (waiting...)", bot_id, status)
         except ClientError:
             pass
-        time.sleep(2)
+        time.sleep(2)  # nosemgrep: arbitrary-sleep — bounded polling loop (max 150 iterations / 300s) awaiting async AWS Lex bot Available status
         elapsed += 2
 
     raise RuntimeError(
@@ -388,7 +388,7 @@ def _build_bot_locale(lex_client, bot_id: str, locale_id: str) -> None:
                 )
         except ClientError:
             pass
-        time.sleep(_BUILD_POLL_INTERVAL_SECONDS)
+        time.sleep(_BUILD_POLL_INTERVAL_SECONDS)  # nosemgrep: arbitrary-sleep — bounded polling loop (max 60 iterations / 300s) awaiting Lex locale build completion
         elapsed += _BUILD_POLL_INTERVAL_SECONDS
 
     raise RuntimeError(

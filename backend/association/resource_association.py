@@ -615,7 +615,7 @@ def _associate_lambda(
     for attempt in range(2):
         try:
             if attempt > 0:
-                time.sleep(5)
+                time.sleep(5)  # nosemgrep: arbitrary-sleep — retry backoff (max 1 retry / 5s) before Lambda association reattempt
             connect_client.associate_lambda_function(
                 InstanceId=instance_id,
                 FunctionArn=func_arn,
@@ -919,7 +919,7 @@ def _create_alias_on_source_bot(
 
                 # Wait for locale build
                 for _ in range(12):
-                    time.sleep(5)
+                    time.sleep(5)  # nosemgrep: arbitrary-sleep — bounded polling loop (max 12 iterations / 60s) awaiting Lex locale build
                     locales_resp = source_lex.list_bot_locales(
                         botId=bot_id, botVersion="DRAFT", maxResults=10,
                     )
@@ -942,7 +942,7 @@ def _create_alias_on_source_bot(
 
                 # Wait for version to become Available
                 for _ in range(12):
-                    time.sleep(5)
+                    time.sleep(5)  # nosemgrep: arbitrary-sleep — bounded polling loop (max 12 iterations / 60s) awaiting Lex bot version Available
                     ver_resp = source_lex.describe_bot_version(
                         botId=bot_id, botVersion=bot_version,
                     )
@@ -988,7 +988,7 @@ def _create_alias_on_source_bot(
         # Wait for alias to replicate to target region
         target_lex = create_target_client("lexv2-models", target_region)
         for attempt in range(12):
-            time.sleep(5)
+            time.sleep(5)  # nosemgrep: arbitrary-sleep — bounded polling loop (max 12 iterations / 60s) awaiting alias replication to target region
             try:
                 replica_resp = target_lex.list_bot_aliases(botId=bot_id, maxResults=10)
                 for alias in replica_resp.get("botAliasSummaries", []):
@@ -1239,7 +1239,7 @@ def _wait_for_firehose_active(firehose_arn: str, target_region: str, max_wait: i
         except ClientError:
             logger.debug("Could not describe Firehose '%s'", stream_name, exc_info=True)
             return None
-        time.sleep(interval)
+        time.sleep(interval)  # nosemgrep: arbitrary-sleep — bounded polling loop awaiting Firehose ACTIVE status (max_wait capped)
         waited += interval
 
     return status if status else None

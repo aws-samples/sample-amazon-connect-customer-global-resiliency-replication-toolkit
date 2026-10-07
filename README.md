@@ -4,7 +4,8 @@ Serverless web application that discovers and replicates AWS resources associate
 
 > **Important:** This toolkit is intended as a starting point for evaluation and learning.
 > Before deploying in any environment, review the [Security considerations](#security) section
-> and ensure the deployment meets your organisation's requirements. See [SECURITY.md](SECURITY.md)
+> and ensure the deployment meets your organisation's requirements. It is not intended for
+> production use without prior evaluation, hardening, and security review. See [SECURITY.md](SECURITY.md)
 > for known gaps and hardening guidance.
 
 ## Getting started

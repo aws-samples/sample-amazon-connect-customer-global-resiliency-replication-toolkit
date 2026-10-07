@@ -13,8 +13,8 @@ Serverless web application that discovers and replicates AWS resources associate
 Clone the repo and follow the [Prerequisites](#prerequisites) and [Deployment](#deployment) sections below.
 
 ```bash
-git clone https://github.com/aws-samples/amazon-connect-customer-acgr-replication-toolkit.git
-cd amazon-connect-customer-acgr-replication-toolkit
+git clone https://github.com/aws-samples/sample-amazon-connect-customer-global-resiliency-replication-toolkit.git
+cd sample-amazon-connect-customer-global-resiliency-replication-toolkit
 ```
 
 ## Architecture

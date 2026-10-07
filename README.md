@@ -19,6 +19,8 @@ cd sample-amazon-connect-customer-global-resiliency-replication-toolkit
 
 ## Architecture
 
+![ACGR Replication Toolkit — Architecture](docs/architecture.png)
+
 ```
 CloudFront
 ├── S3 (React + Cloudscape frontend)

@@ -1,0 +1,48 @@
+/* Attention-drawing pulse for the Failover Tool link in the side panel. */
+@keyframes acgr-failover-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 153, 0, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(255, 153, 0, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 153, 0, 0);
+  }
+}
+
+.acgr-failover-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #ff9900;
+  color: #16191f;
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+  animation: acgr-failover-pulse 1.8s ease-out infinite;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.acgr-failover-link:hover,
+.acgr-failover-link:focus {
+  transform: scale(1.03);
+  background: #ec7211;
+  color: #ffffff;
+  outline: none;
+}
+
+.acgr-failover-link .acgr-failover-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* Respect users who prefer reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .acgr-failover-link {
+    animation: none;
+  }
+}

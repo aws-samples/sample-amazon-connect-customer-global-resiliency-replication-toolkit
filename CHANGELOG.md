@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Frontend build and test tooling updated to clear all open Dependabot alerts (`npm audit`:
+  0 vulnerabilities): `vite` 6.4.1 → 6.4.6, `vitest` 2.1.9 → 5.1.0, and the indirect
+  dependencies refreshed within their allowed ranges (`npm audit fix`, no `--force`). These
+  packages are used only to build and test the UI; none of them is part of the deployed
+  stack. The `AuthProvider` test mocks `oidc-client-ts` with `function` implementations,
+  which Vitest 3 and later require for anything called with `new`.
+
 ### Documentation
 
 - README Region pairs table shows whether Lex bots can be replicated per pair: ALGR supports

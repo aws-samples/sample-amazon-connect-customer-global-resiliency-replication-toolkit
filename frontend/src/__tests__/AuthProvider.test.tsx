@@ -9,8 +9,11 @@ const mgr = vi.hoisted(() => ({
   events: { addSilentRenewError: vi.fn(), addUserSignedOut: vi.fn() },
 }));
 vi.mock("oidc-client-ts", () => ({
-  UserManager: vi.fn(() => mgr),
-  WebStorageStateStore: vi.fn(),
+  // Called with `new` by the app, so the mock must use `function` (Vitest 3+ rejects arrow functions here).
+  UserManager: vi.fn(function () {
+    return mgr;
+  }),
+  WebStorageStateStore: vi.fn(function () {}),
 }));
 
 const loadAuthConfig = vi.hoisted(() => vi.fn());

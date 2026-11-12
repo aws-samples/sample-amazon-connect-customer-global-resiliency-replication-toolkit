@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- README Region pairs table shows whether Lex bots can be replicated per pair: ALGR supports
+  only the US and Europe pairs, so for ap-northeast-1 → ap-northeast-3 Lex bots are skipped
+  (Lex V2 is not offered in ap-northeast-3).
+- README "What ACGR already does" table and the User Guide Associate, Lex and Quota sections
+  now link the AWS page behind each statement (mirrored resources, ACGR requirements, Lex
+  Global Resiliency, IdP integration for approved origins). Approved origins have their own
+  row.
+- New list of what neither ACGR nor the tool copies: prompts stored in S3, saved-report
+  schedules, views in draft state, and the storage configurations `CONTACT_EVALUATIONS`,
+  `EMAIL_MESSAGES`, `REAL_TIME_CONTACT_ANALYSIS_CHAT_SEGMENTS` and
+  `REAL_TIME_CONTACT_ANALYSIS_VOICE_SEGMENTS`.
+
 ### Added
 
 - Amazon Cognito sign-in for the UI and the API. A user pool (admin-created users, no self

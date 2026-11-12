@@ -53,25 +53,30 @@ CloudFront
 
 ACGR's `ReplicateInstance` already mirrors Connect's own configuration across the two Regions and keeps it in sync in both directions (see [What resources are mirrored in the replica instance](https://docs.aws.amazon.com/connect/latest/adminguide/create-replica-connect-instance.html#mirrored-resources)). This toolkit does **not** repeat that. It handles what ACGR leaves to you: the AWS resources around the instance, and linking them to the replica.
 
-| | Handled by ACGR | Handled by this toolkit |
-|---|---|---|
-| Connect configuration | Flows, flow modules, queues, routing profiles, users, security profiles, hours of operation, quick connects, prompts, views, and the other resources listed on the AWS page; the matching service quotas | Nothing |
-| Instance attributes | The attributes listed on the AWS page (including `CONTACT_LENS`, `EARLY_MEDIA`, `MESSAGE_STREAMING`), once the account is onboarded through AWS Support | Always enables `CONTACTFLOW_LOGS` (not replicated by ACGR). Never writes the attributes ACGR replicates; for `CONTACT_LENS`, `EARLY_MEDIA` and `MESSAGE_STREAMING` it only reports when the two instances differ |
-| Lambda functions | Not synchronised | Copies each function to the DR Region, then associates it with the DR instance and adds the Connect invoke permission |
-| Lex V2 bots | Not synchronised by `ReplicateInstance` | Switches on Amazon Lex Global Resiliency (ALGR) for each bot; ALGR then copies the bot, versions and aliases. The toolkit only associates the alias(es) the source instance uses, once ALGR reports them `Available` |
-| Storage (S3, Kinesis, Firehose, video streams), approved origins, Amazon Q in Connect | Not on ACGR's list of mirrored resources | Replicates the resource and links it to the DR instance |
+| | Handled by ACGR | Handled by this toolkit | Source |
+|---|---|---|---|
+| Connect configuration | Flows, flow modules, queues, routing profiles, users, security profiles, hours of operation, quick connects, prompts (not those stored in S3), views, and the other resources listed on the AWS page; the matching service quotas | Nothing | [Mirrored resources](https://docs.aws.amazon.com/connect/latest/adminguide/create-replica-connect-instance.html#mirrored-resources) |
+| Instance attributes | The attributes listed on the AWS page (including `CONTACT_LENS`, `EARLY_MEDIA`, `MESSAGE_STREAMING`), once the account is onboarded through AWS Support | Always enables `CONTACTFLOW_LOGS` (not replicated by ACGR). Never writes the attributes ACGR replicates; for `CONTACT_LENS`, `EARLY_MEDIA` and `MESSAGE_STREAMING` it only reports when the two instances differ | [Mirrored resources](https://docs.aws.amazon.com/connect/latest/adminguide/create-replica-connect-instance.html#mirrored-resources) (instance attributes) |
+| Lambda functions | Not synchronised; ACGR requires a function with the same name in both Regions | Copies each function to the DR Region with the same name, then associates it with the DR instance and adds the Connect invoke permission | [ACGR requirements](https://docs.aws.amazon.com/connect/latest/adminguide/connect-global-resiliency-requirements.html) |
+| Lex V2 bots | Not synchronised by `ReplicateInstance` | Switches on Amazon Lex Global Resiliency (ALGR) for each bot; ALGR then copies the bot, versions and aliases. The toolkit only associates the alias(es) the source instance uses, once ALGR reports them `Available` | [Lex Global Resiliency](https://docs.aws.amazon.com/lexv2/latest/dg/global-resiliency.html) |
+| Approved origins | Not on ACGR's list of mirrored resources; for embedded apps they must be on both instances | Adds the origins you select to the DR instance during replication | [Integrate your IdP](https://docs.aws.amazon.com/connect/latest/adminguide/integrate-idp.html) |
+| Storage (S3, Kinesis, Firehose, video streams), Amazon Q in Connect | Not on ACGR's list of mirrored resources | Replicates the resource and links it to the DR instance | [Mirrored resources](https://docs.aws.amazon.com/connect/latest/adminguide/create-replica-connect-instance.html#mirrored-resources) |
 
 Lex V1 (classic) bots are discovered but not replicated: ALGR supports Lex V2 only.
 
+Neither ACGR nor this toolkit copies prompts stored in S3, saved-report schedules, views in draft state, or the storage configurations `CONTACT_EVALUATIONS`, `EMAIL_MESSAGES`, `REAL_TIME_CONTACT_ANALYSIS_CHAT_SEGMENTS` and `REAL_TIME_CONTACT_ANALYSIS_VOICE_SEGMENTS`. Set these up on the DR instance yourself. See [Limitations](USER-GUIDE.md#limitations).
+
 ## Supported ACGR Region Pairs
 
-| Source | Target |
-|--------|--------|
-| us-east-1 | us-west-2 |
-| us-west-2 | us-east-1 |
-| eu-west-2 | eu-central-1 |
-| eu-central-1 | eu-west-2 |
-| ap-northeast-1 | ap-northeast-3 |
+| Source | Target | Lex V2 bots (ALGR) |
+|--------|--------|--------------------|
+| us-east-1 | us-west-2 | ✅ Replicated |
+| us-west-2 | us-east-1 | ✅ Replicated |
+| eu-west-2 | eu-central-1 | ✅ Replicated |
+| eu-central-1 | eu-west-2 | ✅ Replicated |
+| ap-northeast-1 | ap-northeast-3 | ❌ Skipped: ALGR supports only the US and Europe pairs, and Lex V2 is not offered in ap-northeast-3 |
+
+Region pairs: [Set up Global Resiliency](https://docs.aws.amazon.com/connect/latest/adminguide/setup-connect-global-resiliency.html) (Osaka is a replica Region only, for a Tokyo source). Lex pairs: [Lex Global Resiliency](https://docs.aws.amazon.com/lexv2/latest/dg/global-resiliency.html). Lex V2 Regions: [Amazon Lex endpoints](https://docs.aws.amazon.com/general/latest/gr/lex.html).
 
 ## Prerequisites
 

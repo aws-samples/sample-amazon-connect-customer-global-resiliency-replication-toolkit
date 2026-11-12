@@ -65,19 +65,23 @@ The tool does not create or edit anything on either bot. The bot's code hook fin
 
 **Not replicated by ALGR** (per the Amazon Lex documentation): bots that use LLM-based slots such as CFAQ and utterance generation, and a network of bots as a whole.
 
+**Region pairs.** ALGR works only for us-east-1 ↔ us-west-2 and eu-west-2 ↔ eu-central-1. For ap-northeast-1 → ap-northeast-3 the tool marks every Lex bot **skipped** ("Lex ALGR is not supported for region pair"); Lex V2 is not offered in ap-northeast-3, so the bot cannot be recreated there by hand either.
+
+Sources: [Use Global Resiliency to deploy bots to other Regions](https://docs.aws.amazon.com/lexv2/latest/dg/global-resiliency.html), [Amazon Lex endpoints](https://docs.aws.amazon.com/general/latest/gr/lex.html).
+
 ### Associating with the DR instance
 
 After replication, the **Associate** step links the replicated resources to the DR Connect instance. Safe to re-run: it skips what is already linked.
 
 | What | What the tool does |
 |------|--------------------|
-| Instance attributes | Always turns on `CONTACTFLOW_LOGS`. The tool never writes `CONTACT_LENS`, `EARLY_MEDIA` or `MESSAGE_STREAMING`, because ACGR replicates them once your account is onboarded to instance-attribute replication through AWS Support. It only reads both instances and shows a note when they differ, so you can match them or ask AWS Support to onboard you. |
-| Lambda functions | Adds the Connect invoke permission to the function and associates it with the DR instance. The permission is added even if the function was already associated. |
-| Lex bots | Associates the alias or aliases the source instance uses, once ALGR reports them `Available` (see above). |
+| Instance attributes | Always turns on `CONTACTFLOW_LOGS`. The tool never writes `CONTACT_LENS`, `EARLY_MEDIA` or `MESSAGE_STREAMING`, because ACGR replicates them once your account is onboarded to instance-attribute replication through AWS Support. It only reads both instances and shows a note when they differ, so you can match them or ask AWS Support to onboard you. Source: [Mirrored resources](https://docs.aws.amazon.com/connect/latest/adminguide/create-replica-connect-instance.html#mirrored-resources) (instance attributes). |
+| Lambda functions | Adds the Connect invoke permission to the function and associates it with the DR instance. The permission is added even if the function was already associated. ACGR needs the function to have the same name in both Regions ([requirements](https://docs.aws.amazon.com/connect/latest/adminguide/connect-global-resiliency-requirements.html)). |
+| Lex bots | Associates the alias or aliases the source instance uses, once ALGR reports them `Available` (see above and [Lex Global Resiliency](https://docs.aws.amazon.com/lexv2/latest/dg/global-resiliency.html)). |
 | Kinesis, Firehose, video streams, S3 | Sets up the storage configuration on the DR instance. The storage type comes from the source instance's configuration. |
 | Amazon Q in Connect | Replicates the assistant and knowledge bases, and links them. |
 
-Approved origins are added during replication, for the origins you selected, not in the Associate step.
+Approved origins are added during replication, for the origins you selected, not in the Associate step. If you embed the agent workspace or CCP in your own page, the domain must be an approved origin on both the source and the replica instance ([Integrate your IdP](https://docs.aws.amazon.com/connect/latest/adminguide/integrate-idp.html)).
 
 ### Lambda Runtime Upgrades
 
@@ -121,7 +125,7 @@ Compare service quotas between source and target regions to identify potential i
 
 Highlights quotas where the target region has lower limits than the source.
 
-For an ACGR pair, AWS matches the quotas of the Connect resources it mirrors (users, queues, routing profiles, flows, flow modules, agent status, quick connects, hours of operation, prompts, security profiles, user hierarchy groups) automatically before mirroring them. Those rows carry an **Auto-matched by ACGR** badge; check them again after replication finishes before asking for an increase. Quotas ACGR does not match (for example phone numbers, concurrent calls, and the Lambda, Lex and Kinesis limits) still need a manual request.
+For an ACGR pair, AWS matches the quotas of the Connect resources it mirrors (users, queues, routing profiles, flows, flow modules, agent status, quick connects, hours of operation, prompts, security profiles, user hierarchy groups) automatically before mirroring them. Those rows carry an **Auto-matched by ACGR** badge; check them again after replication finishes before asking for an increase. Quotas ACGR does not match (for example phone numbers, concurrent calls, and the Lambda, Lex and Kinesis limits) still need a manual request. Source: [Mirrored resources](https://docs.aws.amazon.com/connect/latest/adminguide/create-replica-connect-instance.html#mirrored-resources) ("service quotas for these resources are automatically matched").
 
 ---
 
@@ -293,6 +297,14 @@ The resource Lambda handler (`resource_lambda_handler.py`) uses exponential back
 - Lex bots using LLM-based slots, and a network of bots as a whole, are not replicated by ALGR
 - The tool does not create or edit anything on a Lex bot; the replica is read-only and kept in sync by ALGR. If the source instance has no alias of a bot associated, there is no alias to associate and the tool reports it
 - Lambda code is copied as-is; hardcoded region-specific logic may need manual adjustment
+- Lex bots are skipped for ap-northeast-1 → ap-northeast-3: ALGR supports only the US and Europe pairs, and Lex V2 is not offered in ap-northeast-3
+- Not copied by ACGR or by this tool, so set them up on the DR instance yourself:
+  - prompts stored in S3 (ACGR mirrors prompts, but not those stored in S3)
+  - schedules of saved reports (the reports are mirrored, their schedules are not)
+  - views in draft state (only published views are mirrored)
+  - the storage configurations `CONTACT_EVALUATIONS`, `EMAIL_MESSAGES`, `REAL_TIME_CONTACT_ANALYSIS_CHAT_SEGMENTS` and `REAL_TIME_CONTACT_ANALYSIS_VOICE_SEGMENTS` (the tool does not discover or link these types yet)
+
+  Sources: [Mirrored resources](https://docs.aws.amazon.com/connect/latest/adminguide/create-replica-connect-instance.html#mirrored-resources), [ListInstanceStorageConfigs](https://docs.aws.amazon.com/connect/latest/APIReference/API_ListInstanceStorageConfigs.html).
 
 ---
 
@@ -304,7 +316,7 @@ The resource Lambda handler (`resource_lambda_handler.py`) uses exponential back
 | Discovery finds no resources | Ensure the Connect instance has AWS Lambda functions, Amazon Lex bots, or storage configs associated |
 | Lambda replication fails with "Role not found" | IAM roles must be replicated first — check if the IAM role replication succeeded |
 | Amazon Lex bot replication fails | Check that ALGR is supported for the region pair; verify the bot exists in the source region |
-| Lex bot shows **skipped** | It is a Lex V1 (classic) bot. ALGR supports Lex V2 only; migrate it to V2 or create it in the target Region yourself |
+| Lex bot shows **skipped** | It is a Lex V1 (classic) bot (ALGR supports Lex V2 only; migrate it to V2 or create it in the target Region yourself), or the Region pair is ap-northeast-1 → ap-northeast-3, where ALGR is not available |
 | Lex bot association shows **pending** | ALGR is still copying the alias (this can take a while). Retry the association in a few minutes |
 | Lex association says no alias is associated with the source instance | The tool associates the aliases the source Connect instance uses. Associate the alias your flows call with the source instance first; ALGR then replicates it |
 | Lex alias reported **Failed** | ALGR could not replicate that alias. Check the bot's replication status in the Amazon Lex console (Global Resiliency tab) and `lex:ListBotAliasReplicas` |
